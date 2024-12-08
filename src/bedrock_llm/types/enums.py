@@ -25,11 +25,18 @@ class ModelName(str, Enum):
     TITAN_EMBED_IMAGE = "amazon.titan-embed-image-v1"
     COHERE_ENG = "cohere.embed-english-v3"
     COHERE_MULTI = "cohere.embed-multilingual-v3"
+    COHERE_RERANK_3_5 = "cohere.rerank-v3-5:0"
     TITAN_IMAGE_GEN = "amazon.titan-embed-image-v1"
     STABLE_DIFF_3_LARGE = "stability.sd3-large-v1:0"
     STABLE_IMAGE_CORE = "stability.stable-image-core-v1:0"
     STABLE_IMAGE_ULTRA = "stability.stable-image-ultra-v1:0"
     STABLE_DIFF_XL = "stability.stable-diffusion-xl-v1"
+    RERANK_1 = "amazon.rerank-v1:0"
+    NOVA_MICRO = "amazon.nova-micro-v1:0"
+    NOVA_LITE = "amazon.nova-lite-v1:0"
+    NOVA_PRO = "amazon.nova-pro-v1:0"
+    NOVA_CANVAS = "amazon.nova-canvas-v1:0"
+    NOVA_REEL = "amazon.nova-reel-v1:0"
 
 
 class ToolChoiceEnum(Enum):

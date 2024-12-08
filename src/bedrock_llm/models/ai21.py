@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
@@ -95,40 +96,9 @@ class JambaImplementation(BaseModelImplementation):
 
         See more: https://docs.ai21.com/docs/prompt-engineering
         """
-        messages = []
-
-        if tools:
-            raise ValueError(
-                "Jamba Model currently does not support tools, please use other LLM"
-            )
-
-        if isinstance(prompt, str):
-            messages.append(MessageBlock(role="user", content=prompt).model_dump())
-        else:
-            messages.extend(prompt)
-
-        if system is not None:
-            if isinstance(system, SystemBlock):
-                system = system.text
-            system = MessageBlock(role="system", content=system).model_dump()
-            messages.insert(0, system)
-
-        request_body = {
-            "messages": messages,
-            "max_tokens": config.max_tokens,
-            "top_p": config.top_p,
-            "temperature": config.temperature,
-            "stop": config.stop_sequences,
-            "n": config.number_of_responses,
-        }
-
-        # Conditionally add tools if it is not None
-        if tools is not None:
-            if isinstance(tools, dict):
-                tools = [tools]
-            request_body["tools"] = tools
-
-        return request_body
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, **kwargs
+        )
 
     @staticmethod
     def _extract_chunk_data(chunk: dict) -> tuple[Optional[str], Optional[str]]:
@@ -177,10 +147,8 @@ class JambaImplementation(BaseModelImplementation):
         """
         full_answer: List[str] = []
 
-        async for event in stream:
-            # yield event, None
+        async for chunk in stream:
             try:
-                chunk = json.loads(event["chunk"]["bytes"])
                 text_chunk, stop_reason = self._extract_chunk_data(chunk)
 
                 if stop_reason:

@@ -24,9 +24,7 @@ class LlamaImplementation(BaseModelImplementation):
         system: Optional[str],
         tools: Optional[Sequence[ToolMetadata]] = None,
     ) -> str:
-        env = Environment(
-            loader=FileSystemLoader(self.TEMPLATE_DIR),
-        )
+        env = Environment(loader=FileSystemLoader(self.TEMPLATE_DIR))
         template = env.get_template("llama32_template.j2")
         rendered = template.render(
             {"SYSTEM": system, "REQUEST": prompt, "TOOLS": tools}

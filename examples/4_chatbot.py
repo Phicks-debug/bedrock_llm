@@ -25,6 +25,9 @@ async def chat_with_titan():
         memory=[],
         retry_config=RetryConfig(max_retries=3, retry_delay=1.0),
     )
+
+    await client.init_session()
+
     while True:
         input_prompt = await get_user_input("Enter a prompt: ")
         prompt = MessageBlock(role="user", content=input_prompt)
@@ -39,18 +42,20 @@ async def chat_with_titan():
         # Check for bye bye
         if input_prompt.lower() == "/bye":
             break
-        
+
     await client.close()
 
 
 async def chat_with_claude():
     # Initialize the client with memory enable
     client = AsyncClient(
-        region_name="us-east-1",
+        region_name="us-west-2",
         model_name=ModelName.CLAUDE_3_5_SONNET,
         memory=[],
         retry_config=RetryConfig(max_retries=3, retry_delay=1.0),
     )
+
+    await client.init_session()
 
     while True:
         # Receive user input
@@ -58,7 +63,7 @@ async def chat_with_claude():
         prompt = MessageBlock(role="user", content=input_prompt)
 
         # Simple text generation
-        async for token, stop_reason,_ in client.generate_async(prompt=prompt):
+        async for token, stop_reason, _ in client.generate_async(prompt=prompt):
             if stop_reason is None:
                 cprint(token, color="green", end="", flush=True)
             else:
@@ -67,18 +72,20 @@ async def chat_with_claude():
         # Check for bye bye
         if input_prompt.lower() == "/bye":
             break
-        
+
     await client.close()
 
 
 async def chat_with_llama():
     # Initialize the client
     client = AsyncClient(
-        region_name="us-east-1",
+        region_name="us-west-2",
         model_name=ModelName.LLAMA_3_2_90B,
         memory=[],
         retry_config=RetryConfig(max_retries=3, retry_delay=1.0),
     )
+
+    await client.init_session()
 
     while True:
         # Get user input asynchronously
@@ -94,21 +101,23 @@ async def chat_with_llama():
 
         if input.lower() == "/bye":
             break
-        
+
     await client.close()
 
 
 async def chat_with_mistral():
     # Initialize the client
     client = AsyncClient(
-        region_name="us-east-1",
+        region_name="us-west-2",
         model_name=ModelName.MISTRAL_7B,
         memory=[],
         retry_config=RetryConfig(max_retries=3, retry_delay=1.0),
     )
 
+    await client.init_session()
+
     # Predefine the system message to avoid repetition
-    system = "You are a helpful AI assistant that can answer and keep the conversation going."
+    system = "You are a helpful AI assistant."
 
     while True:
         prompt = MessageBlock(
@@ -126,7 +135,7 @@ async def chat_with_mistral():
 
         if prompt.content.lower() == "/bye":
             break
-        
+
     await client.close()
 
 
@@ -138,6 +147,8 @@ async def chat_with_jamba():
         memory=[],
         retry_config=RetryConfig(max_retries=3, retry_delay=1.0),
     )
+
+    await client.init_session()
 
     while True:
         input = await get_user_input("Enter a prompt: ")
@@ -153,14 +164,14 @@ async def chat_with_jamba():
         # Check for bye bye
         if input.lower() == "/bye":
             break
-        
-    await client.close()
 
+    await client.close()
 
 
 if __name__ == "__main__":
     model_selection = input(
-        "Select model (1 for Claude, 2 for Titan, 3 for Llama, 4 for Mistral and 5 for Jamba): "
+        """Select (1 for Claude,
+2 for Titan, 3 for Llama, 4 for Mistral and 5 for Jamba): """
     )
     if model_selection == "1":
         asyncio.run(chat_with_claude())

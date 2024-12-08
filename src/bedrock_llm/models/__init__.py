@@ -4,7 +4,7 @@ from typing import Dict, Type, Union
 
 from ..types.enums import ModelName
 from .ai21 import JambaImplementation
-from .amazon import (TitanEmbeddingsV1Implementation,
+from .amazon import (NovaImplementation, TitanEmbeddingsV1Implementation,
                      TitanEmbeddingsV2Implementation, TitanImplementation)
 from .anthropic import ClaudeImplementation
 from .base import BaseModelImplementation
@@ -14,8 +14,7 @@ from .meta import LlamaImplementation
 from .mistral import MistralChatImplementation, MistralInstructImplementation
 
 MODEL_IMPLEMENTATIONS: Dict[
-    ModelName, Union[Type[BaseModelImplementation],
-                     Type[BaseEmbeddingsImplementation]]
+    ModelName, Union[Type[BaseModelImplementation], Type[BaseEmbeddingsImplementation]]
 ] = {
     ModelName.CLAUDE_3_HAIKU: ClaudeImplementation,
     ModelName.CLAUDE_3_5_HAIKU: ClaudeImplementation,
@@ -28,6 +27,11 @@ MODEL_IMPLEMENTATIONS: Dict[
     ModelName.TITAN_LITE: TitanImplementation,
     ModelName.TITAN_EXPRESS: TitanImplementation,
     ModelName.TITAN_PREMIER: TitanImplementation,
+    ModelName.NOVA_MICRO: NovaImplementation,
+    ModelName.NOVA_LITE: NovaImplementation,
+    ModelName.NOVA_PRO: NovaImplementation,
+    ModelName.NOVA_CANVAS: NovaImplementation,
+    ModelName.NOVA_REEL: NovaImplementation,
     ModelName.JAMBA_1_5_LARGE: JambaImplementation,
     ModelName.JAMBA_1_5_MINI: JambaImplementation,
     ModelName.MISTRAL_7B: MistralInstructImplementation,
@@ -42,6 +46,7 @@ __all__ = [
     "BaseModelImplementation",
     "BaseEmbeddingsImplementation",
     "TitanEmbeddingsImplementation",
+    "NovaImplementation",
     "TitanImplementation",
     "ClaudeImplementation",
     "JambaImplementation",
@@ -50,5 +55,5 @@ __all__ = [
     "MistralInstructImplementation",
     "CohereEnglishEmbedding",
     "CohereMultilingualEmbedding",
-    "MODEL_IMPLEMENTATIONS"
+    "MODEL_IMPLEMENTATIONS",
 ]

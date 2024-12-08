@@ -38,10 +38,10 @@ prompt = [
     MessageBlock(role="assistant", content="The capital of Germany is Berlin."),
     MessageBlock(
         role="user",
-        content="What is your name and what is the weather in the capital of Italy?",
+        content="What is the weather in the capital of Italy?",
     ),
 ]
-system = "You are a helpful assistant. You have access to realtime information. You can use tools to get the real time data weather of a city."
+system = "You are a helpful assistant. You can use tools to get data weather of a city."
 
 # Invoke the model and get results
 response, stop_reason = client.generate(

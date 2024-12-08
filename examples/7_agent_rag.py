@@ -1,3 +1,4 @@
+# flake8: noqa: E501
 import xml.etree.ElementTree as ET
 from typing import Any, Dict
 
@@ -17,7 +18,6 @@ agent = Agent(
     region_name="us-west-2",
     model_name=ModelName.MISTRAL_LARGE_2,
     retry_config=RetryConfig(max_attempts=3),
-    profile_name="bedrock"
 )
 
 # Create a configuration for inference parameters
@@ -170,6 +170,9 @@ If the search results do not contain information that can answer the question, p
         role="user", content="How impact Eximbank is for the economic of Vietname?"
     )
 
+    # Initializate session
+    await agent.init_session()
+
     # Invoke the model and get results
     async for (
         token,
@@ -198,7 +201,8 @@ If the search results do not contain information that can answer the question, p
             cprint(f"\n{stop_reason}", "red", flush=True)
         elif stop_reason:
             cprint(f"\n{stop_reason}", "red", flush=True)
-            
+
+    # Close the session
     await agent.close()
 
 

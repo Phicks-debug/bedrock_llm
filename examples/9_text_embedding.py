@@ -22,7 +22,8 @@ async def main():
     response = await async_client.embed_async(text, "search_document",  dimensions=256)
     print(response)
     await async_client.close()
-    
+
+
 if __name__ == "__main__":
     print("Sync")
     sync_main()

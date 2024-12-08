@@ -1,15 +1,13 @@
 # Add for print console with color
 from termcolor import cprint
 
-from bedrock_llm import (Client,  ModelConfig, ModelName,
-                         RetryConfig)
+from bedrock_llm import Client, ModelConfig, ModelName
 from bedrock_llm.schema import MessageBlock
 
 # Create a LLM client
 client = Client(
     region_name="us-east-1",
     model_name=ModelName.TITAN_PREMIER,
-    retry_config=RetryConfig(max_attempts=3),
 )
 
 # Create a configuration for inference parameters

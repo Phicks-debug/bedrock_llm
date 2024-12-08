@@ -143,11 +143,21 @@ class MessageBlock(BaseModel):
                 return v
             # Otherwise, validate each element
             return [
-                x
-                if isinstance(
-                    x, (TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, Dict, str)
+                (
+                    x
+                    if isinstance(
+                        x,
+                        (
+                            TextBlock,
+                            ToolUseBlock,
+                            ToolResultBlock,
+                            ImageBlock,
+                            Dict,
+                            str,
+                        ),
+                    )
+                    else TextBlock(type="text", text=str(x))
                 )
-                else TextBlock(type="text", text=str(x))
                 for x in v
             ]
         return v

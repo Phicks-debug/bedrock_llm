@@ -1,5 +1,6 @@
 """Anthropic model implementation."""
 
+import asyncio
 import json
 from typing import (Any, AsyncGenerator, Coroutine, Dict, List, Optional,
                     Tuple, Union, cast)
@@ -64,7 +65,9 @@ class ClaudeImplementation(BaseModelImplementation):
         tools: Optional[Union[List[ToolMetadata], List[Dict[Any, Any]]]] = None,
         **kwargs: Any,
     ) -> Coroutine[Any, Any, Dict[str, Any]]:
-        return self.prepare_request(config, prompt, system, tools, **kwargs)
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, **kwargs
+        )
 
     def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
         chunk = json.loads(response)
@@ -99,9 +102,7 @@ class ClaudeImplementation(BaseModelImplementation):
             ),
         )
 
-        async for event in stream:
-            chunk = json.loads(event["chunk"]["bytes"])
-
+        async for chunk in stream:
             if chunk["type"] == "content_block_delta":
                 if chunk["delta"]["type"] == "text_delta":
                     text_chunk = chunk["delta"]["text"]

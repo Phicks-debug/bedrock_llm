@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
@@ -64,7 +65,7 @@ class MistralChatImplementation(BaseModelImplementation):
                     attr_dict = attr.model_dump()
                     properties[name] = {
                         "type": attr_dict["type"],
-                        "description": attr_dict["description"]
+                        "description": attr_dict["description"],
                     }
 
                 # Add properties to parameters
@@ -72,9 +73,9 @@ class MistralChatImplementation(BaseModelImplementation):
 
                 # Convert required Collection to a list if it exists
                 if tool.input_schema.required is not None:
-                    mistral_tool["function"][
-                        "parameters"
-                    ]["required"] = list(tool.input_schema.required)
+                    mistral_tool["function"]["parameters"]["required"] = list(
+                        tool.input_schema.required
+                    )
 
             return mistral_tool
 
@@ -87,49 +88,7 @@ class MistralChatImplementation(BaseModelImplementation):
         config: ModelConfig,
         prompt: Union[str, List[Dict]],
         system: Optional[Union[str, SystemBlock]] = None,
-        tools: Optional[
-            Union[List[ToolMetadata], List[Dict]]
-        ] = None,
-        tool_choice: Optional[ToolChoiceEnum] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        request_body: Dict[str, Any] = {
-            "max_tokens": config.max_tokens,
-            "temperature": config.temperature,
-            "top_p": config.top_p,
-            "stop_sequences": config.stop_sequences if config.stop_sequences else [],
-            "messages": [],
-        }
-
-        if system:
-            if isinstance(system, SystemBlock):
-                system = system.text
-            request_body["messages"] = [
-                {"role": "system", "content": system}
-            ] + request_body["messages"]
-
-        if isinstance(prompt, str):
-            request_body["messages"] = request_body["messages"] + [
-                {"role": "user", "content": prompt}
-            ]
-        elif isinstance(prompt, list):
-            request_body["messages"] = request_body["messages"] + prompt
-
-        if tools:
-            request_body["tools"] = [self._parse_tool_metadata(tool) for tool in tools]
-            if tool_choice is not None:
-                request_body["tool_choice"] = tool_choice.value
-
-        return request_body
-
-    async def prepare_request_async(
-        self,
-        config: ModelConfig,
-        prompt: Union[str, List[Dict]],
-        system: Optional[Union[str, SystemBlock]] = None,
-        tools: Optional[
-            Union[List[ToolMetadata], List[Dict]]
-        ] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
         tool_choice: Optional[ToolChoiceEnum] = None,
         **kwargs,
     ) -> Dict[str, Any]:
@@ -172,6 +131,19 @@ class MistralChatImplementation(BaseModelImplementation):
             request_body["tools"] = parsed_tools
         return request_body
 
+    async def prepare_request_async(
+        self,
+        config: ModelConfig,
+        prompt: Union[str, List[Dict]],
+        system: Optional[Union[str, SystemBlock]] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
+        tool_choice: Optional[ToolChoiceEnum] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, tool_choice, **kwargs
+        )
+
     def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
         chunk = json.loads(response)
         chunk = chunk["choices"][0]
@@ -204,14 +176,15 @@ class MistralChatImplementation(BaseModelImplementation):
         Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
     ]:
         full_response: List[str] = []
-        async for event in stream:
-            chunk = json.loads(event["chunk"]["bytes"])
+        async for chunk in stream:
             chunk = chunk["choices"][0]
             if chunk["stop_reason"]:
                 content = "".join(full_response) if full_response else ""
                 message = MessageBlock(
                     role="assistant",
-                    content=[TextBlock(type="text", text=content)] if content else None,
+                    content=(
+                        [TextBlock(type="text", text=content)] if content else None
+                    ),
                 )
                 if chunk["stop_reason"] == "stop":
                     yield None, StopReason.END_TURN, message
@@ -311,23 +284,9 @@ class MistralInstructImplementation(BaseModelImplementation):
         tool_choice: Optional[ToolChoiceEnum] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        if tools:
-            raise ValueError(
-                "Mistral 7B Instruct does not support tools. Please use another model."
-            )
-
-        system = system.text if isinstance(system, SystemBlock) else system
-
-        if not isinstance(prompt, str):
-            prompt = self.load_template(prompt, system)
-
-        return {
-            "prompt": prompt,
-            "max_tokens": config.max_tokens,
-            "temperature": config.temperature,
-            "top_p": config.top_p,
-            "top_k": config.top_k,
-        }
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, tool_choice, **kwargs
+        )
 
     def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
         chunk = json.loads(response)
@@ -347,8 +306,7 @@ class MistralInstructImplementation(BaseModelImplementation):
     ]:
         full_response: List[str] = []
         async for event in stream:
-            chunk = json.loads(event["chunk"]["bytes"])
-            chunk = chunk["outputs"][0]
+            chunk = event["outputs"][0]
             if chunk["stop_reason"]:
                 message = MessageBlock(role="assistant", content="".join(full_response))
                 if chunk["stop_reason"] == "stop":

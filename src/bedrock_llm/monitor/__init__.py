@@ -1,13 +1,15 @@
 import logging
 import time
+from contextvars import ContextVar
 from datetime import datetime
 from functools import wraps
 
 import psutil
-import pytz  # type: ignore
+import pytz
 from termcolor import cprint
 
-start_time_perf = time.perf_counter()
+# Define ContextVar
+start_time_perf = ContextVar("start_time_perf", default=time.perf_counter())
 
 
 def __get_performance_metrics(func, start_datetime, start_memory):
@@ -17,7 +19,7 @@ def __get_performance_metrics(func, start_datetime, start_memory):
     return {
         "function": func.__name__,
         "start_time": start_datetime,
-        "duration": end_time - start_time_perf,  # Using the global variable
+        "duration": end_time - start_time_perf.get(),
         "memory_used": memory_used,
     }
 
@@ -38,9 +40,8 @@ def __print_metrics(metrics):
 def monitor_async(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        global start_time_perf  # Add global variable to track performance time
         vietnam_tz = pytz.timezone("Asia/Ho_Chi_Minh")
-        start_time_perf = time.perf_counter()  # Store performance counter
+        token = start_time_perf.set(time.perf_counter())  # Store performance counter
         start_memory = psutil.Process().memory_info().rss / 1024 / 1024
         start_datetime = datetime.now(vietnam_tz)
 
@@ -51,13 +52,16 @@ def monitor_async(func):
             return result
         except Exception as e:
             end_time = time.perf_counter()
-            execution_time = end_time - start_time_perf
+            execution_time = end_time - start_time_perf.get()
             cprint(
                 f"\n[ERROR] {func.__name__} failed after {execution_time:.2f} seconds",
                 "red",
             )
             cprint(f"Error: {str(e)}", "red")
             raise e
+        finally:
+            # Reset the context
+            start_time_perf.reset(token)
 
     return wrapper
 
@@ -65,9 +69,8 @@ def monitor_async(func):
 def monitor_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        global start_time_perf  # Add global variable to track performance time
         vietnam_tz = pytz.timezone("Asia/Ho_Chi_Minh")
-        start_time_perf = time.perf_counter()  # Store performance counter
+        token = start_time_perf.set(time.perf_counter())  # Store performance counter
         start_memory = psutil.Process().memory_info().rss / 1024 / 1024
         start_datetime = datetime.now(vietnam_tz)
 
@@ -78,13 +81,16 @@ def monitor_sync(func):
             return result
         except Exception as e:
             end_time = time.perf_counter()
-            execution_time = end_time - start_time_perf
+            execution_time = end_time - start_time_perf.get()
             cprint(
                 f"\n[ERROR] {func.__name__} failed after {execution_time:.2f} seconds",
                 "red",
             )
             cprint(f"Error: {str(e)}", "red")
             raise e
+        finally:
+            # Reset the context
+            start_time_perf.reset(token)
 
     return wrapper
 

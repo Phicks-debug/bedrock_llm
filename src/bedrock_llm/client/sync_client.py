@@ -1,5 +1,6 @@
 """Sync client implementation."""
 
+import json
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from ..aws_clients import AWSClientManager
@@ -72,11 +73,17 @@ class Client(BaseClient):
             response["body"].read()
         )
 
-        if (
-            self.memory is not None
-            and auto_update_memory
-            and response_msg is not None
-        ):
+        if self.memory is not None and auto_update_memory and response_msg is not None:
             self.memory.append(response_msg.model_dump())
 
         return response_msg, stop_reason
+
+    def _invoke_model_sync(self, client: Any, request_body: Dict[str, Any]) -> Any:
+        """Invoke model with sync client."""
+        return client.invoke_model(
+            modelId=self.model_name,
+            accept="application/json",
+            contentType="application/json",
+            body=json.dumps(request_body),
+            trace="ENABLED",
+        )

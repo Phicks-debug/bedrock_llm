@@ -1,3 +1,5 @@
+# flake8: noqa: E501
+import asyncio
 import json
 import logging
 import os
@@ -7,7 +9,7 @@ from typing import (Any, AsyncGenerator, Coroutine, Dict, List, Optional,
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config.model import ModelConfig
-from ..schema.message import MessageBlock, SystemBlock
+from ..schema.message import ImageBlock, MessageBlock, SystemBlock, TextBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import StopReason
 from .base import BaseModelImplementation
@@ -39,7 +41,7 @@ class TitanImplementation(BaseModelImplementation):
         prompt: Union[str, List[Dict]],
         system: Optional[Union[str, SystemBlock]] = None,
         tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         if tools:
             raise ValueError(
@@ -74,31 +76,11 @@ class TitanImplementation(BaseModelImplementation):
         prompt: Union[str, List[Dict]],
         system: Optional[Union[str, SystemBlock]] = None,
         tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
-        if tools:
-            raise ValueError(
-                """
-                Titan models are not support function callings and tools.
-                Please use another models
-                """
-            )
-
-        if isinstance(system, SystemBlock):
-            system = system.text
-
-        if not isinstance(prompt, str):
-            prompt = self.load_template(prompt, system)
-
-        return {
-            "inputText": prompt,
-            "textGenerationConfig": {
-                "maxTokenCount": config.max_tokens,
-                "temperature": config.temperature,
-                "topP": config.top_p,
-                "stopSequences": config.stop_sequences,
-            },
-        }
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, **kwargs
+        )
 
     def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
         chunk = json.loads(response)
@@ -124,8 +106,7 @@ class TitanImplementation(BaseModelImplementation):
         Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
     ]:
         full_response = []
-        async for event in stream:
-            chunk = json.loads(event["chunk"]["bytes"])
+        async for chunk in stream:
             yield chunk["outputText"], None, None
             full_response.append(chunk["outputText"])
             if chunk["completionReason"]:
@@ -143,46 +124,35 @@ class TitanImplementation(BaseModelImplementation):
 
 class TitanEmbedding(BaseEmbeddingsImplementation):
     def parse_embedding_response(
-        self,
-        response: Any
+        self, response: Any
     ) -> Tuple[EmbeddingVector, Optional[Metadata]]:
         body = response.get("body").read()
         response_json = json.loads(body)
 
         if "embedding" in response_json:
             embedding = response_json["embedding"]
-            metadata = {
-                k: v for k,
-                v in response_json.items() if k != "embedding"
-            }
+            metadata = {k: v for k, v in response_json.items() if k != "embedding"}
             return embedding, metadata
         else:
             raise ValueError("No embeddings found in response")
 
     async def parse_embedding_response_async(
-        self,
-        response: Any
+        self, response: Any
     ) -> Tuple[EmbeddingVector, Optional[Metadata]]:
         body = response.get("body").read()
         response_json = json.loads(body)
 
         if "embedding" in response_json:
             embedding = response_json["embedding"]
-            metadata = {
-                k: v for k,
-                v in response_json.items() if k != "embedding"
-            }
+            metadata = {k: v for k, v in response_json.items() if k != "embedding"}
             return embedding, metadata
         else:
             raise ValueError("No embeddings found in response")
 
 
 class TitanEmbeddingsV1Implementation(TitanEmbedding):
-
     def prepare_embedding_request(
-        self,
-        texts: Union[str, List[str]],
-        **kwargs
+        self, texts: Union[str, List[str]], **kwargs
     ) -> Dict[str, Any]:
         if isinstance(texts, List):
             raise ValueError(
@@ -190,28 +160,17 @@ class TitanEmbeddingsV1Implementation(TitanEmbedding):
                 Only input texts as a string that you want to embedding"""
             )
 
-        return {
-            "inputText": texts
-        }
+        return {"inputText": texts}
 
     async def prepare_embedding_request_async(
-        self,
-        texts: Union[str, List[str]],
-        **kwargs
+        self, texts: Union[str, List[str]], **kwargs
     ) -> Coroutine[Any, Any, Dict[str, Any]]:
-        return self.prepare_embedding_request(
-            texts,
-            **kwargs
-        )
+        return await asyncio.to_thread(self.prepare_embedding_request, texts, **kwargs)
 
 
 class TitanEmbeddingsV2Implementation(TitanEmbedding):
-
     def prepare_embedding_request(
-        self,
-        texts: Union[str, List[str]],
-        input_type: EmbeddingInputType,
-        **kwargs
+        self, texts: Union[str, List[str]], input_type: EmbeddingInputType, **kwargs
     ) -> Dict[str, Any]:
         if isinstance(texts, List):
             raise ValueError(
@@ -228,7 +187,7 @@ class TitanEmbeddingsV2Implementation(TitanEmbedding):
         return {
             "inputText": texts,
             "dimensions": kwargs.pop("dimensions", 1024),
-            "normalize": kwargs.pop("normalize", True)
+            "normalize": kwargs.pop("normalize", True),
         }
 
     async def prepare_embedding_request_async(
@@ -236,10 +195,210 @@ class TitanEmbeddingsV2Implementation(TitanEmbedding):
         texts: Union[str, List[str]],
         input_type: EmbeddingInputType,
         embedding_type: Optional[str] = float,
-        **kwargs
+        **kwargs,
     ) -> Coroutine[Any, Any, Dict[str, Any]]:
-        return self.prepare_embedding_request(
-            texts,
-            input_type,
-            **kwargs
+        return await asyncio.to_thread(
+            self.prepare_embedding_request, texts, input_type, **kwargs
         )
+
+
+class NovaImplementation(BaseModelImplementation):
+    def convert_to_nova_format(
+        self, message: Union[MessageBlock, str, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Convert MessageBlock to Nova format."""
+        nova_content = []
+
+        if isinstance(message, str):
+            nova_content.append({"text": message})
+            return {"role": "user", "content": nova_content}
+
+        if isinstance(message, dict):
+            # Handle dictionary input
+            content = message.get("content", "")
+            role = message.get("role", "user")
+
+            if isinstance(content, str):
+                nova_content.append({"text": content})
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        if "text" in item:
+                            nova_content.append({"text": item["text"]})
+                        elif "image" in item:
+                            nova_content.append({"image": item["image"]})
+                    elif isinstance(item, str):
+                        nova_content.append({"text": item})
+
+            return {"role": role, "content": nova_content}
+
+        elif isinstance(message, MessageBlock):
+            if isinstance(message.content, str):
+                nova_content.append({"text": message.content})
+            elif isinstance(message.content, list):
+                for item in message.content:
+                    if isinstance(item, str):
+                        nova_content.append({"text": item})
+                    elif isinstance(item, TextBlock):
+                        nova_content.append({"text": item.text})
+                    elif isinstance(item, ImageBlock):
+                        nova_content.append(
+                            {
+                                "image": {
+                                    "format": item.source.media_type.split("/")[-1],
+                                    "source": {"bytes": item.source.data},
+                                }
+                            }
+                        )
+            return {"role": message.role, "content": nova_content}
+
+        raise ValueError(f"Unsupported message type: {type(message)}")
+
+    def convert_to_nova_tool(self, tools: List[ToolMetadata]) -> List[Dict[str, Dict]]:
+        """Convert tools to Nova tools format."""
+        t: List[Dict[str, Dict]] = []
+        for tool in tools:
+            if isinstance(tool, ToolMetadata):
+                # Convert ToolMetadata to Nova's format
+                nova_tool = {
+                    "toolSpec": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": {
+                            "json": {
+                                "type": tool.input_schema.type,
+                                "properties": {
+                                    name: {
+                                        "type": prop.type,
+                                        "description": prop.description,
+                                        **({"enum": prop.enum} if prop.enum else {}),
+                                    }
+                                    for name, prop in tool.input_schema.properties.items()
+                                },
+                                "required": tool.input_schema.required or [],
+                            }
+                        },
+                    }
+                }
+                t.append(nova_tool)
+            else:
+                # If it's already a dict, assume it's in the correct format
+                t.append({"toolSpec": tool})
+        return t
+
+    def prepare_request(
+        self,
+        config: ModelConfig,
+        prompt: Union[str, MessageBlock, List[Dict[Any, Any]]],
+        system: Optional[Union[str, SystemBlock]] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
+        **kwargs,
+    ):
+        """Prepare request for Nova model."""
+
+        # Convert messages to Nova format
+        if isinstance(prompt, List):
+            nova_messages = [self.convert_to_nova_format(msg) for msg in prompt]
+        else:
+            nova_messages = [self.convert_to_nova_format(prompt)]
+
+        body_request = {
+            "messages": nova_messages,
+            "inferenceConfig": {
+                "max_new_tokens": config.max_tokens,
+                "temperature": config.temperature,
+                "top_p": config.top_p,
+                "top_k": config.top_k,
+                "stopSequences": config.stop_sequences,
+            },
+        }
+
+        # Prepare and convert tools to Nova format
+        if tools:
+            t = self.convert_to_nova_tool(tools)
+            body_request["toolConfig"] = {
+                "tools": t,
+                "toolChoice": {
+                    "auto": {}
+                },  # Amazon Nova models ONLY support tool choice of "auto"
+            }
+
+        # Prepare system message
+        system_content = None
+        if system:
+            if isinstance(system, str):
+                system_content = [{"text": system}]
+            elif isinstance(system, SystemBlock):
+                system_content = [{"text": system.text}]
+            body_request["system"] = system_content
+
+        print(body_request)
+
+        return body_request
+
+    async def prepare_request_async(
+        self, config, prompt, system=None, tools=None, **kwargs
+    ):
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, **kwargs
+        )
+
+    def parse_response(self, response: Any):
+        chunk = json.loads(response)
+        content = chunk["output"]["message"]["content"]
+        for i in content:
+            if i.get("text"):
+                response = i["text"]
+            if i.get("toolUse"):
+                response = i["toolUse"]
+        stop_reason = chunk["stopReason"]
+        # usage = chunk["usage"]
+        return response, stop_reason
+
+    async def parse_stream_response(
+        self, stream: Any
+    ) -> AsyncGenerator[
+        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
+    ]:
+        """Parse the streaming response from Nova model."""
+        full_response = ""
+        message = MessageBlock(
+            role="assistant",
+            content=[],
+        )
+
+        async for chunk in stream:
+            # Handle message start
+            if "messageStart" in chunk:
+                continue
+
+            # Handle content block delta (text)
+            if "contentBlockDelta" in chunk:
+                if "text" in chunk["contentBlockDelta"]["delta"]:
+                    text_chunk = chunk["contentBlockDelta"]["delta"]["text"]
+                    yield text_chunk, None, None
+                    full_response += text_chunk
+
+            # Handle content block stop
+            elif "contentBlockStop" in chunk:
+                continue
+
+            # Handle end of response with metadata
+            elif "metadata" in chunk:
+                if full_response:
+                    if isinstance(message.content, list):
+                        message.content.append(
+                            TextBlock(type="text", text=full_response)
+                        )
+                    yield None, StopReason.END_TURN, message
+                    return
+
+            # Handle empty final chunk
+            elif chunk == {}:
+                continue
+
+        # If we get here without returning, yield final message
+        if full_response:
+            if isinstance(message.content, list):
+                message.content.append(TextBlock(type="text", text=full_response))
+            yield None, StopReason.END_TURN, message

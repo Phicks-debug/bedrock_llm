@@ -8,14 +8,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="bedrock_llm",
-    version="0.1.95.beta",
+    version="1.0.0",
     packages=find_packages(where="src"),
     include_package_data=True,
     package_dir={"": "src"},
     install_requires=requirements,
     author="Tran Quy An",
     author_email="an.tq@techxcorp.com",
-    description="A Python LLM frameworkfor interacting with AWS Bedrock services, built on top of boto3. This library serves as a comprehensive tool for fast prototyping, building POCs, and deploying production-ready LLM applications with robust infrastructure support.",
+    description="A Python LLM framework for interacting with AWS Bedrock services, it supports true async to interact with AWS bedrock Service for invoke model API, build on top of aiohttp. It also have synchronous version which built on top of boto3. This library serves as a comprehensive tool for fast prototyping, building POCs, and deploying production-ready LLM applications with robust infrastructure support.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Phicks-debug/bedrock_llm",

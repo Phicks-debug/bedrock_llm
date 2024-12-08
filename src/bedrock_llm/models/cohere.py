@@ -1,4 +1,5 @@
 """Cohere embeddings model implementations."""
+
 import json
 from typing import Any, Coroutine, Dict, List, Optional, Tuple, Union
 
@@ -10,8 +11,7 @@ class CohereEmbedding(BaseEmbeddingsImplementation):
     """Base class for Cohere embedding models."""
 
     def parse_embedding_response(
-        self,
-        response: Any
+        self, response: Any
     ) -> Tuple[List[EmbeddingVector], Optional[Metadata]]:
         """Parse the embedding response from Cohere.
 
@@ -33,8 +33,7 @@ class CohereEmbedding(BaseEmbeddingsImplementation):
         return embedding_vectors, metadata if metadata else None
 
     async def parse_embedding_response_async(
-        self,
-        response: Any
+        self, response: Any
     ) -> Tuple[List[EmbeddingVector], Optional[Metadata]]:
         """Async version of parse_embedding_response."""
         return self.parse_embedding_response(response)
@@ -69,10 +68,7 @@ class CohereMultilingualEmbedding(CohereEmbedding):
     ) -> Coroutine[Any, Any, Dict[str, Any]]:
         """Async version of prepare_embedding_request."""
         return self.prepare_embedding_request(
-            texts=texts,
-            input_type=input_type,
-            embedding_type=embedding_type,
-            **kwargs
+            texts=texts, input_type=input_type, embedding_type=embedding_type, **kwargs
         )
 
 
@@ -105,8 +101,5 @@ class CohereEnglishEmbedding(CohereEmbedding):
     ) -> Coroutine[Any, Any, Dict[str, Any]]:
         """Async version of prepare_embedding_request."""
         return self.prepare_embedding_request(
-            texts=texts,
-            input_type=input_type,
-            embedding_type=embedding_type,
-            **kwargs
+            texts=texts, input_type=input_type, embedding_type=embedding_type, **kwargs
         )

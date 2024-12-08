@@ -1,3 +1,4 @@
+# flake8: noqa: E501
 import boto3
 from botocore.exceptions import ClientError
 from termcolor import cprint
@@ -9,7 +10,7 @@ from bedrock_llm.monitor import monitor_async
 
 # Define the runtime for knowledge base
 runtime = boto3.client("bedrock-agent-runtime", region_name="us-east-1")
-ses_client = boto3.client('ses', region_name='ap-southeast-1')
+ses_client = boto3.client("ses", region_name="ap-southeast-1")
 
 # Create a LLM client
 agent = Agent(
@@ -34,67 +35,59 @@ send_email_tool = ToolMetadata(
     input_schema=InputSchema(
         type="object",
         properties={
-            "recipient_email": PropertyAttr(type="string", description="The recipient's email address."),
-            "sender_email": PropertyAttr(type="string", description="The sender's email address."),
-            "subject": PropertyAttr(type="string", description="The subject of the email."),
+            "recipient_email": PropertyAttr(
+                type="string", description="The recipient's email address."
+            ),
+            "sender_email": PropertyAttr(
+                type="string", description="The sender's email address."
+            ),
+            "subject": PropertyAttr(
+                type="string", description="The subject of the email."
+            ),
             "body": PropertyAttr(type="string", description="The body of the email."),
         },
-        required=["email", "subject", "body"]
+        required=["email", "subject", "body"],
     ),
 )
+
 
 # Create a function for sending email from outlook
 @Agent.tool(send_email_tool)
 @monitor_async
-async def send_email(
-    recipient_email: str, 
-    sender_email: str, 
-    subject: str, 
-    body: str
-):
+async def send_email(recipient_email: str, sender_email: str, subject: str, body: str):
     try:
         # Prepare the email
         email_message = {
-            'Source': sender_email,
-            'Destination': {
-                'ToAddresses': [recipient_email]
+            "Source": sender_email,
+            "Destination": {"ToAddresses": [recipient_email]},
+            "Message": {
+                "Subject": {"Data": subject, "Charset": "UTF-8"},
+                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
             },
-            'Message': {
-                'Subject': {
-                    'Data': subject,
-                    'Charset': 'UTF-8'
-                },
-                'Body': {
-                    'Text': {
-                        'Data': body,
-                        'Charset': 'UTF-8'
-                    }
-                }
-            }
         }
-        
+
         # Send the email
         response = ses_client.send_email(**email_message)
-        
+
         return {
             "success": True,
             "message": f"Email sent successfully! MessageId: {response['MessageId']}",
-            "status_code": 200
+            "status_code": 200,
         }
-        
+
     except ClientError as e:
-        error_message = e.response['Error']['Message']
+        error_message = e.response["Error"]["Message"]
         return {
             "success": False,
             "message": f"Failed to send email: {error_message}",
-            "status_code": 500
+            "status_code": 500,
         }
-    
+
     except Exception as e:
         return {
             "success": False,
             "message": f"An unexpected error occurred: {str(e)}",
-            "status_code": 500
+            "status_code": 500,
         }
 
 
@@ -102,8 +95,11 @@ async def main():
 
     # Create user prompt
     prompt = MessageBlock(
-        role="user", content="Can you you send an email to my colleage 'mineran2003@gmail.com' to ask him when he can finish the function in python that I asked him to it."
+        role="user",
+        content="Can you you send an email to my colleage 'mineran2003@gmail.com' to ask him when he can finish the function in python that I asked him to it.",
     )
+
+    await agent.init_session()
 
     # Invoke the model and get results
     async for (
@@ -133,8 +129,9 @@ async def main():
             cprint(f"\n{stop_reason}", "red", flush=True)
         elif stop_reason:
             cprint(f"\n{stop_reason}", "red", flush=True)
-            
+
     await agent.close()
+
 
 if __name__ == "__main__":
     import asyncio

@@ -1,5 +1,7 @@
+# flake8: noqa: E203
 """Meta model implementation."""
 
+import asyncio
 import json
 import logging
 import os
@@ -7,7 +9,7 @@ import uuid
 from typing import (Any, AsyncGenerator, Dict, List, Optional, Sequence, Tuple,
                     Union)
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..models.base import (BaseModelImplementation, MessageBlock, ModelConfig,
                            StopReason, SystemBlock)
@@ -26,6 +28,7 @@ class LlamaImplementation(BaseModelImplementation):
     ) -> str:
         env = Environment(
             loader=FileSystemLoader(self.TEMPLATE_DIR),
+            autoescape=select_autoescape(["html", "xml", "j2"]),
         )
         template = env.get_template("llama32_template.j2")
         rendered = template.render(
@@ -62,18 +65,9 @@ class LlamaImplementation(BaseModelImplementation):
         tools: Optional[Sequence[ToolMetadata]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        if isinstance(system, SystemBlock):
-            system = system.text
-
-        if not isinstance(prompt, str):
-            prompt = self.load_template(prompt, system, tools)
-
-        return {
-            "prompt": prompt,
-            "max_gen_len": config.max_tokens,
-            "temperature": config.temperature,
-            "top_p": config.top_p,
-        }
+        return await asyncio.to_thread(
+            self.prepare_request, config, prompt, system, tools, **kwargs
+        )
 
     def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
         chunk = json.loads(response)
@@ -110,42 +104,44 @@ class LlamaImplementation(BaseModelImplementation):
         calls = []
 
         for char in content:
-            if char == '(':
+            if char == "(":
                 depth += 1
-            elif char == ')':
+            elif char == ")":
                 depth -= 1
-            elif char == ',' and depth == 0:
-                calls.append(''.join(current).strip())
+            elif char == "," and depth == 0:
+                calls.append("".join(current).strip())
                 current = []
                 continue
             current.append(char)
 
         if current:
-            calls.append(''.join(current).strip())
+            calls.append("".join(current).strip())
 
         tool_calls = []
         for call in calls:
             # Extract function name and arguments
-            func_name = call[:call.index('(')]
-            args_str = call[call.index('(')+1:call.rindex(')')]
+            func_name = call[: call.index("(")]
+            args_str = call[call.index("(") + 1 : call.rindex(")")]
 
             # Parse arguments
             args = {}
             if args_str:
-                for arg in args_str.split(','):
-                    key, value = arg.split('=')
+                for arg in args_str.split(","):
+                    key, value = arg.split("=")
                     key = key.strip()
                     value = value.strip().strip("'\"")
                     args[key] = value
 
-            tool_calls.append({
-                "id": str(uuid.uuid4()),
-                "type": "function",
-                "function": {
-                    "name": func_name.strip(),
-                    "arguments": json.dumps(args)
+            tool_calls.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "function",
+                    "function": {
+                        "name": func_name.strip(),
+                        "arguments": json.dumps(args),
+                    },
                 }
-            })
+            )
 
         return tool_calls
 
@@ -156,8 +152,7 @@ class LlamaImplementation(BaseModelImplementation):
     ]:
         full_answer: List[str] = []
 
-        async for event in stream:
-            chunk = json.loads(event["chunk"]["bytes"])
+        async for chunk in stream:
             yield chunk["generation"], None, None
             full_answer.append(chunk["generation"])
 
@@ -177,8 +172,8 @@ class LlamaImplementation(BaseModelImplementation):
                         if tool_calls:
                             message = MessageBlock(
                                 role="assistant",
-                                content="<|python_tag|>"+response,
-                                tool_calls=tool_calls
+                                content="<|python_tag|>" + response,
+                                tool_calls=tool_calls,
                             )
                             yield None, StopReason.TOOL_USE, message
                         else:

@@ -140,11 +140,11 @@ class ParallelNode(PipelineNode):
         if self.is_async:
             return await self.func(data)
         else:
-            return await asyncio.get_event_loop().run_in_executor(
-                self.thread_pool,
-                self.func,
-                data
-            )
+            loop = asyncio.get_running_loop()
+            try:
+                return await loop.run_in_executor(self.thread_pool, self.func, data)
+            finally:
+                loop.close()
 
     def __del__(self):
         self.thread_pool.shutdown(wait=False)
