@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..models.base import (BaseModelImplementation, MessageBlock, ModelConfig,
                            StopReason, SystemBlock)
+from ..schema.response import ResponseBlock, TraceBlock
 from ..schema.tools import ToolMetadata
 
 
@@ -69,20 +70,33 @@ class LlamaImplementation(BaseModelImplementation):
             self.prepare_request, config, prompt, system, tools, **kwargs
         )
 
-    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
+    def parse_response(self, response: Any) -> ResponseBlock:
         chunk = json.loads(response)
         response_text = chunk["generation"].strip()
 
         if response_text[0] == "[" and response_text[-1] == "]":
             message = MessageBlock(role="tool", content=response_text)
-            return message, StopReason.TOOL_USE
+            stop_reason = StopReason.TOOL_USE
 
         message = MessageBlock(role="assistant", content=response_text)
         if chunk["stop_reason"] == "stop":
-            return message, StopReason.END_TURN
+            stop_reason = StopReason.END_TURN
         elif chunk["stop_reason"] == "length":
-            return message, StopReason.MAX_TOKENS
-        return message, StopReason.ERROR
+            stop_reason = StopReason.MAX_TOKENS
+        else:
+            stop_reason = StopReason.ERROR
+
+        trace = TraceBlock(
+            input_tokens=chunk["prompt_token_count"],
+            output_tokens=chunk["generation_token_count"],
+            total_tokens=chunk["prompt_token_count"] + chunk["generation_token_count"],
+        )
+
+        return ResponseBlock(
+            message=message,
+            stop_reason=stop_reason,
+            trace=trace,
+        )
 
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
         """Parse Llama's string format tool calls into structured format.

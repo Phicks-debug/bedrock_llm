@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..models.base import BaseModelImplementation, ModelConfig
 from ..schema.message import (MessageBlock, SystemBlock, TextBlock,
                               ToolCallBlock)
+from ..schema.response import ResponseBlock, TraceBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import StopReason, ToolChoiceEnum
 
@@ -117,7 +118,7 @@ class MistralChatImplementation(BaseModelImplementation):
         }
 
         # Conditionally add tools and tool_choice if they are not None
-        if tools is not None:
+        if tools:
             parsed_tools = []
             for tool in tools:
                 if isinstance(tool, (dict, ToolMetadata)):
@@ -144,9 +145,9 @@ class MistralChatImplementation(BaseModelImplementation):
             self.prepare_request, config, prompt, system, tools, tool_choice, **kwargs
         )
 
-    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
-        chunk = json.loads(response)
-        chunk = chunk["choices"][0]
+    def parse_response(self, response: Any) -> ResponseBlock:
+        block = json.loads(response)
+        chunk = block["choices"][0]
         message = MessageBlock(
             role=chunk["message"]["role"],
             content=chunk["message"]["content"],
@@ -162,13 +163,23 @@ class MistralChatImplementation(BaseModelImplementation):
             ),
         )
         if chunk["finish_reason"] == "stop":
-            return message, StopReason.END_TURN
+            stop_reason = StopReason.END_TURN
         elif chunk["finish_reason"] == "tool_calls":
-            return message, StopReason.TOOL_USE
+            stop_reason = StopReason.TOOL_USE
         elif chunk["finish_reason"] == "length":
-            return message, StopReason.MAX_TOKENS
+            stop_reason = StopReason.MAX_TOKENS
         else:
-            return message, StopReason.ERROR
+            stop_reason = StopReason.ERROR
+
+        trace = TraceBlock(
+            input_tokens=block["usage"]["prompt_tokens"],
+            output_tokens=block["usage"]["completion_tokens"],
+            total_tokens=block["usage"]["total_tokens"],
+        )
+
+        return ResponseBlock(
+            id=block["id"], message=message, stop_reason=stop_reason, trace=trace
+        )
 
     async def parse_stream_response(
         self, stream: Any
@@ -288,16 +299,21 @@ class MistralInstructImplementation(BaseModelImplementation):
             self.prepare_request, config, prompt, system, tools, tool_choice, **kwargs
         )
 
-    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
+    def parse_response(self, response: Any) -> ResponseBlock:
         chunk = json.loads(response)
         chunk = chunk["outputs"][0]
         message = MessageBlock(role="assistant", content=chunk["text"])
         if chunk["stop_reason"] == "stop":
-            return message, StopReason.END_TURN
+            stop_reason = StopReason.END_TURN
         elif chunk["stop_reason"] == "length":
-            return message, StopReason.MAX_TOKENS
+            stop_reason = StopReason.MAX_TOKENS
         else:
-            return message, StopReason.ERROR
+            stop_reason = StopReason.ERROR
+        return ResponseBlock(
+            message=message,
+            stop_reason=stop_reason,
+            trace=TraceBlock(),
+        )
 
     async def parse_stream_response(
         self, stream: Any

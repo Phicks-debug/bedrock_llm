@@ -17,11 +17,11 @@ config = ModelConfig(temperature=0.1, top_p=0.9, max_tokens=512)
 prompt = "Who are you?"
 
 # Invoke the model and get results
-response, stop_reason = client.generate(prompt, config)
+response = client.generate(prompt=prompt, config=config)
 
 # Print out the results
-cprint(response.content, "green")
-cprint(stop_reason, "red")
+cprint(response.message.content, "green")
+cprint(response.stop_reason.name, "red")
 
 # Create a system prompt with a list of examples
 system = "Your name is Bob, you live in Paris"
@@ -36,8 +36,8 @@ prompt = [
 ]
 
 # Invoke the model and get results
-response, stop_reason = client.generate(prompt, system, config=config)
+response = client.generate(prompt, system, config=config)
 
 # Print out the results
-cprint(response.content, "green")
-cprint(stop_reason, "red")
+cprint(response.message.content, "green")
+cprint(response.stop_reason.name, "red")

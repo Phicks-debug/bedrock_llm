@@ -9,7 +9,9 @@ from typing import (Any, AsyncGenerator, Coroutine, Dict, List, Optional,
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config.model import ModelConfig
-from ..schema.message import ImageBlock, MessageBlock, SystemBlock, TextBlock
+from ..schema.message import (ImageBlock, MessageBlock, SystemBlock, TextBlock,
+                              ToolUseBlock)
+from ..schema.response import ResponseBlock, TraceBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import StopReason
 from .base import BaseModelImplementation
@@ -92,13 +94,24 @@ class TitanImplementation(BaseModelImplementation):
             tool_call_id=None,
         )
         if chunk["results"][0]["completionReason"] == "FINISH":
-            return message, StopReason.END_TURN
+            stop_reason = StopReason.END_TURN
         elif chunk["results"][0]["completionReason"] == "LENGTH":
-            return message, StopReason.MAX_TOKENS
+            stop_reason = StopReason.MAX_TOKENS
         elif chunk["results"][0]["completionReason"] == "STOP":
-            return message, StopReason.STOP_SEQUENCE
+            stop_reason = StopReason.STOP_SEQUENCE
         else:
-            return message, StopReason.ERROR
+            stop_reason = StopReason.ERROR
+        trace = TraceBlock(
+            input_tokens=chunk["inputTextTokenCount"],
+            output_tokens=chunk["results"][0]["tokenCount"],
+            total_tokens=chunk["inputTextTokenCount"]
+            + chunk["results"][0]["tokenCount"],
+        )
+        return ResponseBlock(
+            message=message,
+            stop_reason=stop_reason,
+            trace=trace,
+        )
 
     async def parse_stream_response(
         self, stream: Any
@@ -332,8 +345,6 @@ class NovaImplementation(BaseModelImplementation):
                 system_content = [{"text": system.text}]
             body_request["system"] = system_content
 
-        print(body_request)
-
         return body_request
 
     async def prepare_request_async(
@@ -344,16 +355,46 @@ class NovaImplementation(BaseModelImplementation):
         )
 
     def parse_response(self, response: Any):
+        isToolUse = False
+        message = MessageBlock(role="assistant", content=[])
         chunk = json.loads(response)
         content = chunk["output"]["message"]["content"]
         for i in content:
             if i.get("text"):
-                response = i["text"]
+                message.content.append(TextBlock(type="text", text=i["text"]))
             if i.get("toolUse"):
-                response = i["toolUse"]
-        stop_reason = chunk["stopReason"]
-        # usage = chunk["usage"]
-        return response, stop_reason
+                isToolUse = True
+                tool = i["toolUse"]
+                message.content.append(
+                    ToolUseBlock(
+                        type="tool_use",
+                        id=tool["toolUseId"],
+                        name=tool["name"],
+                        input=tool["input"],
+                    )
+                )
+        if chunk["stopReason"] == "end_turn":
+            stop_reason = StopReason.END_TURN
+            if isToolUse:
+                stop_reason = StopReason.TOOL_USE
+        if chunk["stopReason"] == "error":
+            stop_reason = StopReason.ERROR
+        elif stop_reason == "stop_sequence":
+            stop_reason = StopReason.STOP_SEQUENCE
+        elif stop_reason == "max_tokens":
+            stop_reason = StopReason.MAX_TOKENS
+        usage = TraceBlock(
+            input_tokens=chunk["usage"]["inputTokens"],
+            output_tokens=chunk["usage"]["outputTokens"],
+            total_tokens=chunk["usage"]["totalTokens"],
+            cache_read_input_token=chunk["usage"]["cacheReadInputTokenCount"],
+            cache_write_input_token=chunk["usage"]["cacheWriteInputTokenCount"],
+        )
+        return ResponseBlock(
+            message=message,
+            stop_reason=stop_reason,
+            trace=usage,
+        )
 
     async def parse_stream_response(
         self, stream: Any

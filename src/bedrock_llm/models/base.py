@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 from ..config.model import ModelConfig
 from ..schema.message import MessageBlock, SystemBlock
+from ..schema.response import ResponseBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import StopReason
 
@@ -33,7 +34,7 @@ class BaseModelImplementation(ABC):
         pass
 
     @abstractmethod
-    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
+    def parse_response(self, response: Any) -> ResponseBlock:
         pass
 
     @abstractmethod

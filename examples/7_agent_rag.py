@@ -15,8 +15,8 @@ runtime = boto3.client("bedrock-agent-runtime", region_name="us-east-1")
 
 # Create a LLM client
 agent = Agent(
-    region_name="us-west-2",
-    model_name=ModelName.MISTRAL_LARGE_2,
+    region_name="us-east-1",
+    model_name=ModelName.JAMBA_1_5_LARGE,
     retry_config=RetryConfig(max_attempts=3),
 )
 

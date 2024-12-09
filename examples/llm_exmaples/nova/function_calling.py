@@ -22,9 +22,10 @@ weather_tool = ToolMetadata(
 
 client = Client(region_name="us-east-1", model_name=ModelName.NOVA_PRO)
 result = client.generate(
-    prompt="What is the weather in Hanoi?",
+    prompt="What is the weather in Hanoi and Paris?",
     system="You have a weather tool to check weather",
     tools=[weather_tool],
 )
 
-print(result[0])
+print("Function invoke: ", result.message.content)
+print("Stop reason: ", result.stop_reason.name)

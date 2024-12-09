@@ -1,4 +1,4 @@
-"""Tool schema definitions."""
+"""Tool Schema Definitions"""
 
 from typing import Dict, List, Literal, Optional
 

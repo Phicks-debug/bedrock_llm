@@ -44,20 +44,18 @@ prompt = [
 system = "You are a helpful assistant. You can use tools to get data weather of a city."
 
 # Invoke the model and get results
-response, stop_reason = client.generate(
-    config=config, prompt=prompt, tools=[get_weather_tool]
-)
+response = client.generate(config=config, prompt=prompt, tools=[get_weather_tool])
 
 # Print out the results
-cprint(f"Calling function: {response.content}", "cyan")
-cprint(stop_reason, "red")
+cprint(f"Calling function: {response.message.content}", "cyan")
+cprint(response.stop_reason.name, "red")
 
 # Send the tool result back to the model
-response, stop_reason = client.generate(
+response = client.generate(
     config=config,
     prompt=MessageBlock(role="tool", content="20*C"),
 )
 
 # Print out the results
-cprint(response.content, "green")
-cprint(stop_reason, "red")
+cprint(response.message.content, "green")
+cprint(response.stop_reason, "red")

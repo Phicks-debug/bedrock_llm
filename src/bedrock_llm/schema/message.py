@@ -1,4 +1,4 @@
-"""Message schema definitions."""
+"""Message Schema Definitions"""
 
 from typing import Any, Dict, List, Optional, Union
 

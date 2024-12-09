@@ -8,6 +8,7 @@ from typing import (Any, AsyncGenerator, Coroutine, Dict, List, Optional,
 from ..models.base import BaseModelImplementation, ModelConfig
 from ..schema.message import (ImageBlock, MessageBlock, SystemBlock, TextBlock,
                               ToolResultBlock, ToolUseBlock)
+from ..schema.response import ResponseBlock, TraceBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import StopReason
 
@@ -69,7 +70,7 @@ class ClaudeImplementation(BaseModelImplementation):
             self.prepare_request, config, prompt, system, tools, **kwargs
         )
 
-    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
+    def parse_response(self, response: Any) -> ResponseBlock:
         chunk = json.loads(response)
         message = MessageBlock(
             role=chunk["role"],
@@ -79,14 +80,29 @@ class ClaudeImplementation(BaseModelImplementation):
             tool_call_id=None,
         )
         if chunk.get("stop_reason") == "end_turn":
-            return message, StopReason.END_TURN
+            stop_reason = StopReason.END_TURN
         elif chunk.get("stop_reason") == "stop_sequence":
-            return message, StopReason.STOP_SEQUENCE
+            stop_reason = StopReason.STOP_SEQUENCE
         elif chunk.get("stop_reason") == "max_token":
-            return message, StopReason.MAX_TOKENS
+            stop_reason = StopReason.MAX_TOKENS
         elif chunk.get("stop_reason") == "tool_use":
-            return message, StopReason.TOOL_USE
-        return message, StopReason.ERROR
+            stop_reason = StopReason.TOOL_USE
+        else:
+            stop_reason = StopReason.ERROR
+
+        trace = TraceBlock(
+            input_tokens=chunk["usage"]["input_tokens"],
+            output_tokens=chunk["usage"]["output_tokens"],
+            total_tokens=chunk["usage"]["input_tokens"]
+            + chunk["usage"]["output_tokens"],
+        )
+
+        return ResponseBlock(
+            id=chunk["id"],
+            message=message,
+            stop_reason=stop_reason,
+            trace=trace,
+        )
 
     async def parse_stream_response(
         self, stream: Any

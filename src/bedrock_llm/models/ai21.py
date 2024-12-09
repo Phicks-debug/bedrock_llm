@@ -4,11 +4,78 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 from ..models.base import BaseModelImplementation, ModelConfig
 from ..schema.message import MessageBlock, SystemBlock
+from ..schema.response import ResponseBlock, TraceBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import StopReason
 
 
 class JambaImplementation(BaseModelImplementation):
+
+    def _parse_tool_metadata(
+        self, tool: Union[ToolMetadata, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Parse a ToolMetadata object or a dictionary
+            into the format required by the Mistral model.
+        """
+
+        if isinstance(tool, dict):
+            # Handle all dictionary inputs consistently
+            if "type" in tool and tool["type"] == "function":
+                function_data = tool.get("function", {})
+            else:
+                function_data = tool
+
+            return {
+                "type": "function",
+                "function": {
+                    "name": function_data.get("name", "unnamed_function"),
+                    "description": function_data.get(
+                        "description", "No description provided"
+                    ),
+                    "parameters": function_data.get(
+                        "input_schema",
+                        {"type": "object", "properties": {}, "required": []},
+                    ),
+                },
+            }
+
+        if isinstance(tool, ToolMetadata):
+            jamba_tool = {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            }
+
+            if tool.input_schema:
+                # Convert properties Collection to a dictionary
+                properties = {}
+                for name, attr in tool.input_schema.properties.items():
+                    # Convert Pydantic model to dict
+                    attr_dict = attr.model_dump()
+                    properties[name] = {
+                        "type": attr_dict["type"],
+                        "description": attr_dict["description"],
+                    }
+
+                # Add properties to parameters
+                jamba_tool["function"]["parameters"]["properties"] = properties
+
+                # Convert required Collection to a list if it exists
+                if tool.input_schema.required is not None:
+                    jamba_tool["function"]["parameters"]["required"] = list(
+                        tool.input_schema.required
+                    )
+
+            return jamba_tool
+
+        raise ValueError(
+            f"Unsupported tool type: {type(tool)}. Expected Dict or ToolMetadata."
+        )
+
     def prepare_request(
         self,
         config: ModelConfig,
@@ -41,11 +108,6 @@ class JambaImplementation(BaseModelImplementation):
         """
         messages = []
 
-        if tools:
-            raise ValueError(
-                "AI21 Jamba Model does not support tools. Please use another model."
-            )
-
         if isinstance(prompt, str):
             messages.append(MessageBlock(role="user", content=prompt).model_dump())
         else:
@@ -65,6 +127,20 @@ class JambaImplementation(BaseModelImplementation):
             "stop": config.stop_sequences,
             "n": config.number_of_responses,
         }
+
+        # Conditionally add tools if provided
+        if tools:
+            parsed_tools = []
+            for tool in tools:
+                if isinstance(tool, (dict, ToolMetadata)):
+                    parsed_tools.append(self._parse_tool_metadata(tool))
+                else:
+                    raise ValueError(
+                        f"""Unsupported tool type in list: {type(tool)}.
+                        Expected Dict or ToolMetadata."""
+                    )
+
+            request_body["tools"] = parsed_tools
 
         return request_body
 
@@ -109,12 +185,16 @@ class JambaImplementation(BaseModelImplementation):
         choice = chunk["choices"][0]
         return (choice["delta"].get("content"), choice.get("finish_reason"))
 
-    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
-        chunk = json.loads(response)
-        chunk = chunk["choices"][0]
+    def parse_response(self, response: Any) -> ResponseBlock:
+        block = json.loads(response)
+        chunk = block["choices"][0]
         message = MessageBlock(
             role="assistant",
-            content=chunk["message"]["content"].strip(),
+            content=(
+                chunk["message"]["content"].strip()
+                if chunk["message"]["content"]
+                else None
+            ),
             tool_calls=chunk["message"].get("tool_calls", None),
             name=None,
             tool_call_id=None,
@@ -126,7 +206,19 @@ class JambaImplementation(BaseModelImplementation):
         else:
             stop_reason = StopReason.ERROR
 
-        return message, stop_reason
+        trace = TraceBlock(
+            input_tokens=block["usage"]["prompt_tokens"],
+            output_tokens=block["usage"]["completion_tokens"],
+            total_tokens=block["usage"]["total_tokens"],
+            metadata=block["meta"],
+        )
+
+        return ResponseBlock(
+            id=block["id"],
+            message=message,
+            stop_reason=stop_reason,
+            trace=trace,
+        )
 
     async def parse_stream_response(
         self, stream: Any
