@@ -22,9 +22,11 @@ async def main():
     await client.init_session()
 
     try:
-        async for token, stop_reason, _ in client.generate_async(prompt):
-            if stop_reason:
-                cprint(f"\nGeneration stopped: {stop_reason}", color="red")
+        async for token, response_block in client.generate_async(prompt):
+            if response_block:
+                cprint(
+                    f"\nGeneration stopped: {response_block.stop_reason}", color="red"
+                )
                 break
             cprint(token, color="green", end="", flush=True)
     finally:

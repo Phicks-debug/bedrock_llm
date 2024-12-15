@@ -183,13 +183,22 @@ class MistralChatImplementation(BaseModelImplementation):
 
     async def parse_stream_response(
         self, stream: Any
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         full_response: List[str] = []
+
         async for chunk in stream:
-            chunk = chunk["choices"][0]
-            if chunk["stop_reason"]:
+            ct = chunk["choices"][0]
+            if ct["stop_reason"]:
+                metrics = chunk["amazon-bedrock-invocationMetrics"]
+                trace = TraceBlock(
+                    input_tokens=chunk["usage"]["prompt_tokens"],
+                    output_tokens=chunk["usage"]["completion_tokens"],
+                    total_tokens=chunk["usage"]["total_tokens"],
+                    metadata={
+                        "invocation_latency": metrics["invocationLatency"],
+                        "first_byte_latency": metrics["firstByteLatency"],
+                    },
+                )
                 content = "".join(full_response) if full_response else ""
                 message = MessageBlock(
                     role="assistant",
@@ -197,45 +206,32 @@ class MistralChatImplementation(BaseModelImplementation):
                         [TextBlock(type="text", text=content)] if content else None
                     ),
                 )
-                if chunk["stop_reason"] == "stop":
-                    yield None, StopReason.END_TURN, message
-                elif chunk["stop_reason"] == "tool_calls":
-                    if "tool_calls" in chunk["message"]:
+                if ct["stop_reason"] == "stop":
+                    stop = StopReason.END_TURN
+                elif ct["stop_reason"] == "tool_calls":
+                    if "tool_calls" in ct["message"]:
                         tool_calls = [
                             ToolCallBlock(
                                 id=tool_call["id"],
                                 type=tool_call["type"],
                                 function=tool_call["function"],
                             )
-                            for tool_call in chunk["message"]["tool_calls"]
+                            for tool_call in ct["message"]["tool_calls"]
                         ]
                         message.tool_calls = tool_calls
-                    yield None, StopReason.TOOL_USE, message
-                elif chunk["stop_reason"] == "length":
-                    yield None, StopReason.MAX_TOKENS, message
+                    stop = StopReason.TOOL_USE
+                elif ct["stop_reason"] == "length":
+                    stop = StopReason.MAX_TOKENS
                 else:
-                    yield None, StopReason.ERROR, message
+                    stop = StopReason.ERROR
+                yield None, ResponseBlock(
+                    message=message, stop_reason=stop, trace=trace
+                )
                 return
             else:
-                if "content" in chunk["message"] and chunk["message"]["content"]:
-                    yield chunk["message"]["content"], None, None
-                    full_response.append(chunk["message"]["content"])
-                elif "tool_calls" in chunk["message"]:
-                    # Handle streaming tool calls
-                    tool_calls = [
-                        ToolCallBlock(
-                            id=tool_call["id"],
-                            type=tool_call["type"],
-                            function=tool_call["function"],
-                        )
-                        for tool_call in chunk["message"]["tool_calls"]
-                    ]
-                    message = MessageBlock(
-                        role="assistant",
-                        content=[TextBlock(type="text", text="")],
-                        tool_calls=tool_calls,
-                    )
-                    yield None, None, message
+                if "content" in ct["message"] and ct["message"]["content"]:
+                    full_response.append(ct["message"]["content"])
+                    yield ct["message"]["content"], None
 
 
 class MistralInstructImplementation(BaseModelImplementation):
@@ -322,16 +318,34 @@ class MistralInstructImplementation(BaseModelImplementation):
     ]:
         full_response: List[str] = []
         async for event in stream:
-            chunk = event["outputs"][0]
-            if chunk["stop_reason"]:
-                message = MessageBlock(role="assistant", content="".join(full_response))
-                if chunk["stop_reason"] == "stop":
-                    yield None, StopReason.END_TURN, message
-                elif chunk["stop_reason"] == "length":
-                    yield None, StopReason.MAX_TOKENS, message
+            if event.get("outputs"):
+                chunk = event["outputs"][0]
+                if chunk["stop_reason"]:
+                    message = MessageBlock(
+                        role="assistant", content="".join(full_response)
+                    )
+                    if chunk["stop_reason"] == "stop":
+                        stop = StopReason.END_TURN
+                    elif chunk["stop_reason"] == "length":
+                        stop = StopReason.MAX_TOKENS
+                    else:
+                        stop = StopReason.ERROR
                 else:
-                    yield None, StopReason.ERROR, message
-                return
-            else:
-                yield chunk["text"], None, None
-                full_response.append(chunk["text"])
+                    full_response.append(chunk["text"])
+                    yield chunk["text"], None
+            if event.get("amazon-bedrock-invocationMetrics"):
+                metrics = event["amazon-bedrock-invocationMetrics"]
+                yield None, ResponseBlock(
+                    message=message,
+                    stop_reason=stop,
+                    trace=TraceBlock(
+                        input_tokens=metrics["inputTokenCount"],
+                        output_tokens=metrics["outputTokenCount"],
+                        total_tokens=metrics["inputTokenCount"]
+                        + metrics["outputTokenCount"],
+                        metadata={
+                            "invocation_latency": metrics["invocationLatency"],
+                            "first_byte_latency": metrics["firstByteLatency"],
+                        },
+                    ),
+                )

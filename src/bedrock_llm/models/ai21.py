@@ -128,6 +128,26 @@ class JambaImplementation(BaseModelImplementation):
             "n": config.number_of_responses,
         }
 
+        # Conditionally add document if provided
+        if kwargs.get("documents"):
+            if not isinstance(kwargs.get("documents"), List):
+                raise ValueError(
+                    """Documents must be a list of dict.
+Please read this for more information of Document use:
+https://docs.ai21.com/reference/jamba-15-api-ref"""
+                )
+            request_body["documents"] = kwargs.get("documents")
+
+        # Conditionally add response format if provided
+        if kwargs.get("response_format"):
+            if not isinstance(kwargs.get("documents"), List):
+                raise ValueError(
+                    """Documents must be a list of dict.
+Please read this for more information of Document use:
+https://docs.ai21.com/reference/jamba-15-api-ref"""
+                )
+            request_body["response_format"] = kwargs.get("response_format")
+
         # Conditionally add tools if provided
         if tools:
             parsed_tools = []
@@ -222,9 +242,7 @@ class JambaImplementation(BaseModelImplementation):
 
     async def parse_stream_response(
         self, stream: Any
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         """
         Parse the response from the Bedrock API, handling both text content
         and tool call requests.
@@ -244,21 +262,32 @@ class JambaImplementation(BaseModelImplementation):
                 text_chunk, stop_reason = self._extract_chunk_data(chunk)
 
                 if stop_reason:
+                    trace = TraceBlock(
+                        input_tokens=chunk["usage"]["prompt_tokens"],
+                        output_tokens=chunk["usage"]["completion_tokens"],
+                        total_tokens=chunk["usage"]["total_tokens"],
+                        metadata=chunk["meta"],
+                    )
                     message = MessageBlock(
                         role="assistant", content="".join(full_answer).strip()
                     )
                     if stop_reason == "stop":
-                        yield None, StopReason.END_TURN, message
+                        stop = StopReason.END_TURN
                     elif stop_reason == "length":
-                        yield None, StopReason.MAX_TOKENS, message
-                    break
+                        stop = StopReason.MAX_TOKENS
+                    yield None, ResponseBlock(
+                        message=message,
+                        stop_reason=stop,
+                        trace=trace,
+                    )
+                    return
 
                 if not text_chunk:
                     continue
 
                 if not stop_reason:
-                    yield text_chunk, None, None
                     full_answer.append(text_chunk)
+                    yield text_chunk, None
 
             except Exception as e:
                 print(f"Unexpected error processing chunk: {str(e)}")

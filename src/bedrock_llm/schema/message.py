@@ -25,6 +25,29 @@ class Image(BaseModel):
     data: str = Field(description="Base64-encoded image data")
 
 
+class Document(BaseModel):
+    """A Document represented as base64 data."""
+
+    type: str = Field(description="Type of document, must be 'base_64")
+    media_type: str = Field(description="Media type of the document")
+    data: str = Field(description="Base64-encoded document data")
+
+
+class DocumentBlock(BaseModel):
+    """Document block."""
+
+    cache_control: Optional[CacheControl] = Field(
+        description="Controls caching behavior for the document block", default=None
+    )
+    type: str = Field(description="Type of block, must be 'document'")
+    source: Document = Field(description="Source of the document")
+
+    def model_dump(self, **kwargs):
+        kwargs.setdefault("exclude_none", True)
+        kwargs.setdefault("exclude_unset", True)
+        return super().model_dump(**kwargs)
+
+
 class SystemBlock(BaseModel):
     """System prompt."""
 
@@ -88,7 +111,7 @@ class ToolResultBlock(BaseModel):
         description="ID of the tool use associated with this result"
     )
     is_error: bool = Field(description="Whether the tool call resulted in an error")
-    content: Union[TextBlock, ImageBlock, str] = Field(
+    content: List[Union[TextBlock, ImageBlock, Any]] = Field(
         description="Content of the tool result"
     )
 
@@ -152,6 +175,7 @@ class MessageBlock(BaseModel):
                             ToolUseBlock,
                             ToolResultBlock,
                             ImageBlock,
+                            DocumentBlock,
                             Dict,
                             str,
                         ),

@@ -3,7 +3,7 @@ import boto3
 from botocore.exceptions import ClientError
 from termcolor import cprint
 
-from bedrock_llm import Agent, ModelConfig, ModelName, RetryConfig, StopReason
+from bedrock_llm import AsyncAgent, ModelConfig, ModelName, RetryConfig, StopReason
 from bedrock_llm.schema import InputSchema, PropertyAttr, ToolMetadata, MessageBlock
 from bedrock_llm.monitor import monitor_async
 
@@ -13,7 +13,7 @@ runtime = boto3.client("bedrock-agent-runtime", region_name="us-east-1")
 ses_client = boto3.client("ses", region_name="ap-southeast-1")
 
 # Create a LLM client
-agent = Agent(
+agent = AsyncAgent(
     region_name="us-west-2",
     model_name=ModelName.MISTRAL_LARGE_2,
     retry_config=RetryConfig(max_attempts=3),
@@ -51,8 +51,8 @@ send_email_tool = ToolMetadata(
 )
 
 
-# Create a function for sending email from outlook
-@Agent.tool(send_email_tool)
+# Create a function for sending email from SES
+@AsyncAgent.tool(send_email_tool)
 @monitor_async
 async def send_email(recipient_email: str, sender_email: str, subject: str, body: str):
     try:
@@ -104,14 +104,13 @@ async def main():
     # Invoke the model and get results
     async for (
         token,
-        stop_reason,
-        response,
+        response_block,
         tool_result,
     ) in agent.generate_and_action_async(
         config=config,
         prompt=prompt,
         system=system,
-        tools=["send_email"],
+        tools=[send_email],
     ):
         # Print out the results
         if token:
@@ -120,15 +119,18 @@ async def main():
         # Print out the tool result
         if tool_result:
             for x in tool_result:
-                cprint(f"\n{x.content}", "yellow", flush=True)
+                cprint(f"\n{x}", "yellow", flush=True)
+
+        if not response_block:
+            continue
 
         # Print out the function that need to use
-        if stop_reason == StopReason.TOOL_USE:
-            for x in response.tool_calls:
+        if response_block.stop_reason == StopReason.TOOL_USE:
+            for x in response_block.message.tool_calls:
                 cprint(f"\n{x.model_dump()}", "cyan", end="", flush=True)
-            cprint(f"\n{stop_reason}", "red", flush=True)
-        elif stop_reason:
-            cprint(f"\n{stop_reason}", "red", flush=True)
+            cprint(f"\n{response_block.stop_reason}", "red", flush=True)
+        elif response_block.stop_reason:
+            cprint(f"\n{response_block.stop_reason}", "red", flush=True)
 
     await agent.close()
 

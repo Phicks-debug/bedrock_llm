@@ -14,6 +14,7 @@ from botocore.awsrequest import AWSRequest
 from ..config.base import RetryConfig
 from ..config.model import ModelConfig
 from ..schema.message import MessageBlock
+from ..schema.response import ResponseBlock
 from ..schema.tools import ToolMetadata
 from ..types.enums import ModelName, StopReason
 from ..types.exceptions import AsyncClientSessionError
@@ -103,9 +104,7 @@ class AsyncClient(BaseClient):
         config: Optional[ModelConfig] = None,
         auto_update_memory: bool = True,
         **kwargs: Any,
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         """Generate a response from the model asynchronously with streaming."""
         config_internal = config or ModelConfig()
         invoke_messages = self._process_prompt(prompt, auto_update_memory)
@@ -149,22 +148,30 @@ class AsyncClient(BaseClient):
         try:
             async for (
                 token,
-                stop_reason,
-                res,
+                res_block,
             ) in self.model_implementation.parse_stream_response(_generate_stream()):
-                if self.memory is not None and auto_update_memory and res is not None:
-                    if isinstance(res, MessageBlock):
-                        self.memory.append(res.model_dump())
-                yield token, stop_reason, res
+                await asyncio.sleep(0)
+                if (
+                    self.memory is not None
+                    and auto_update_memory
+                    and res_block is not None
+                ):
+                    if isinstance(res_block, ResponseBlock):
+                        self.memory.append(res_block.message.model_dump())
+                yield token, res_block
         except Exception:
             async for (
                 token,
-                stop_reason,
-                res,
+                res_block,
             ) in self._handle_retry_logic_stream(
                 self.model_implementation.parse_stream_response, _generate_stream()
             ):
-                if self.memory is not None and auto_update_memory and res is not None:
-                    if isinstance(res, MessageBlock):
-                        self.memory.append(res.model_dump())
-                yield token, stop_reason, res
+                await asyncio.sleep(0)
+                if (
+                    self.memory is not None
+                    and auto_update_memory
+                    and res_block is not None
+                ):
+                    if isinstance(res_block, ResponseBlock):
+                        self.memory.append(res_block.message.model_dump())
+                yield token, res_block

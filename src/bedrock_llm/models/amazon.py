@@ -115,23 +115,45 @@ class TitanImplementation(BaseModelImplementation):
 
     async def parse_stream_response(
         self, stream: Any
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         full_response = []
+        message = None
+        is_stop = False
+
         async for chunk in stream:
-            yield chunk["outputText"], None, None
-            full_response.append(chunk["outputText"])
-            if chunk["completionReason"]:
-                message = MessageBlock(role="assistant", content="".join(full_response))
-                if chunk["completionReason"] == "FINISH":
-                    yield None, StopReason.END_TURN, message
-                elif chunk["completionReason"] == "LENGTH":
-                    yield None, StopReason.MAX_TOKENS, message
-                elif chunk["completionReason"] == "STOP":
-                    yield None, StopReason.STOP_SEQUENCE, message
-                else:
-                    yield None, StopReason.ERROR, message
+            if not is_stop:
+                full_response.append(chunk["outputText"])
+
+                if chunk["completionReason"]:
+                    message = MessageBlock(
+                        role="assistant", content="".join(full_response)
+                    )
+                    if chunk["completionReason"] == "FINISH":
+                        stop = StopReason.END_TURN
+                    elif chunk["completionReason"] == "LENGTH":
+                        stop = StopReason.MAX_TOKENS
+                    elif chunk["completionReason"] == "STOP":
+                        stop = StopReason.STOP_SEQUENCE
+                    else:
+                        stop = StopReason.ERROR
+                yield chunk["outputText"], None
+
+            if chunk.get("amazon-bedrock-invocationMetrics") and message:
+                metrics = chunk["amazon-bedrock-invocationMetrics"]
+                yield None, ResponseBlock(
+                    message=message,
+                    stop_reason=stop,
+                    trace=TraceBlock(
+                        input_tokens=metrics["inputTokenCount"],
+                        output_tokens=metrics["outputTokenCount"],
+                        total_tokens=metrics["inputTokenCount"]
+                        + metrics["outputTokenCount"],
+                        metadata={
+                            "invocation_latency": metrics["invocationLatency"],
+                            "first_byte_latency": metrics["firstByteLatency"],
+                        },
+                    ),
+                )
                 return
 
 
@@ -398,48 +420,97 @@ class NovaImplementation(BaseModelImplementation):
 
     async def parse_stream_response(
         self, stream: Any
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         """Parse the streaming response from Nova model."""
-        full_response = ""
+        full_response = []
         message = MessageBlock(
             role="assistant",
             content=[],
         )
+        current_tool_use = None
+        tool_uses = []
 
         async for chunk in stream:
             # Handle message start
             if "messageStart" in chunk:
                 continue
 
-            # Handle content block delta (text)
+            # Handle content block start (for tool use)
+            if "contentBlockStart" in chunk:
+                if "toolUse" in chunk["contentBlockStart"]["start"]:
+                    current_tool_use = {
+                        "type": "tool_use",
+                        "id": chunk["contentBlockStart"]["start"]["toolUse"][
+                            "toolUseId"
+                        ],
+                        "name": chunk["contentBlockStart"]["start"]["toolUse"]["name"],
+                        "input": {},
+                    }
+
+            # Handle content block delta (text and tool use)
             if "contentBlockDelta" in chunk:
                 if "text" in chunk["contentBlockDelta"]["delta"]:
                     text_chunk = chunk["contentBlockDelta"]["delta"]["text"]
-                    yield text_chunk, None, None
-                    full_response += text_chunk
+                    full_response.append(text_chunk)
+                    yield text_chunk, None,
+                elif "toolUse" in chunk["contentBlockDelta"]["delta"]:
+                    if current_tool_use:
+                        input_str = chunk["contentBlockDelta"]["delta"]["toolUse"][
+                            "input"
+                        ]
+                        current_tool_use["input"] = json.loads(input_str)
 
             # Handle content block stop
             elif "contentBlockStop" in chunk:
+                if current_tool_use:
+                    tool_uses.append(ToolUseBlock(**current_tool_use))
+                    current_tool_use = None
                 continue
+
+            elif "messageStop" in chunk:
+                if tool_uses:
+                    stop = StopReason.TOOL_USE
+                elif chunk["messageStop"]["stopReason"] == "end_turn":
+                    stop = StopReason.END_TURN
+                elif chunk["messageStop"]["stopReason"] == "stop_sequence":
+                    stop = StopReason.STOP_SEQUENCE
+                elif chunk["messageStop"]["stopReason"] == "max_tokens":
+                    stop = StopReason.MAX_TOKENS
+                else:
+                    stop = StopReason.ERROR
 
             # Handle end of response with metadata
             elif "metadata" in chunk:
                 if full_response:
-                    if isinstance(message.content, list):
-                        message.content.append(
-                            TextBlock(type="text", text=full_response)
-                        )
-                    yield None, StopReason.END_TURN, message
-                    return
+                    usage = TraceBlock(
+                        input_tokens=chunk["metadata"]["usage"]["inputTokens"],
+                        output_tokens=chunk["metadata"]["usage"]["outputTokens"],
+                        total_tokens=chunk["metadata"]["usage"]["inputTokens"]
+                        + chunk["metadata"]["usage"]["outputTokens"],
+                        cache_read_input_token=chunk["metadata"]["usage"].get(
+                            "cacheReadInputTokenCount"
+                        ),
+                        cache_write_input_token=chunk["metadata"]["usage"].get(
+                            "cacheWriteInputTokenCount"
+                        ),
+                        metadata=chunk["amazon-bedrock-invocationMetrics"],
+                    )
 
             # Handle empty final chunk
             elif chunk == {}:
                 continue
 
         # If we get here without returning, yield final message
-        if full_response:
+        if len(full_response) > 0:
             if isinstance(message.content, list):
-                message.content.append(TextBlock(type="text", text=full_response))
-            yield None, StopReason.END_TURN, message
+                message.content.append(
+                    TextBlock(type="text", text="".join(full_response))
+                )
+                if tool_uses:
+                    message.content.extend(tool_uses)
+
+            yield None, ResponseBlock(
+                message=message,
+                stop_reason=stop,
+                trace=usage,
+            )

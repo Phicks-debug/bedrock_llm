@@ -1,7 +1,7 @@
 # Add for print console with color
 from termcolor import cprint
 
-from bedrock_llm import Agent, ModelConfig, ModelName, RetryConfig
+from bedrock_llm import AsyncAgent, ModelConfig, ModelName
 from bedrock_llm.schema import InputSchema, PropertyAttr, ToolMetadata, MessageBlock
 from bedrock_llm.types.enums import StopReason
 
@@ -33,7 +33,7 @@ prompt = MessageBlock(
 )
 
 
-@Agent.tool(get_weather_tool)
+@AsyncAgent.tool(get_weather_tool)
 async def get_weather(location: str):
     # Mock function to get weather
     return f"tools_result: {location} is 20*C"
@@ -41,21 +41,18 @@ async def get_weather(location: str):
 
 async def main():
     # Create agent and init session
-    async with Agent(
-        region_name="us-east-1",
-        model_name=ModelName.CLAUDE_3_5_HAIKU,
-        retry_config=RetryConfig(max_attempts=3),
+    async with AsyncAgent(
+        region_name="us-west-2", model_name=ModelName.CLAUDE_3_5_HAIKU
     ) as agent:
         # Invoke agent
         async for (
             token,
-            stop_reason,
-            response,
+            response_block,
             tool_result,
         ) in agent.generate_and_action_async(
             prompt=prompt,
             system=system,
-            tools=["get_weather"],
+            tools=[get_weather],
             config=config,
         ):
             # Print out the token
@@ -63,17 +60,21 @@ async def main():
                 cprint(token, "green", end="", flush=True)
 
             # Print out the tool request from the model
-            if stop_reason == StopReason.TOOL_USE:
-                cprint(f"\n{response.content}", "cyan", end="", flush=True)
-                cprint(f"\n{stop_reason}", "red")
+            if response_block:
+                if response_block.stop_reason == StopReason.TOOL_USE:
+                    cprint(
+                        f"\n{response_block.message.content}",
+                        "cyan",
+                        end="",
+                        flush=True,
+                    )
+                    cprint(f"\n{response_block.stop_reason}", "red")
+                else:
+                    cprint(f"\n{response_block.stop_reason}", "red")
 
             # Print out the result from executed the tool
             if tool_result:
                 cprint(f"\n{tool_result}", "yellow")
-
-            # Print out the stop reason
-            elif stop_reason:
-                cprint(f"\n{stop_reason}", "red")
 
 
 if __name__ == "__main__":

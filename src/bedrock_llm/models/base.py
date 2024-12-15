@@ -7,7 +7,6 @@ from ..config.model import ModelConfig
 from ..schema.message import MessageBlock, SystemBlock
 from ..schema.response import ResponseBlock
 from ..schema.tools import ToolMetadata
-from ..types.enums import StopReason
 
 
 class BaseModelImplementation(ABC):
@@ -40,7 +39,5 @@ class BaseModelImplementation(ABC):
     @abstractmethod
     async def parse_stream_response(
         self, stream: Any
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         pass

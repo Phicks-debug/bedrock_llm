@@ -22,7 +22,7 @@ weather_tool = ToolMetadata(
     ),
 )
 
-client = Client(region_name="us-east-1", model_name=ModelName.JAMBA_1_5_LARGE)
+client = Client(region_name="us-east-1", model_name=ModelName.JAMBA_1_5_MINI)
 result = client.generate(
     prompt="What is the weather in Hanoi and Paris?",
     system="You have a weather tool to check weather",

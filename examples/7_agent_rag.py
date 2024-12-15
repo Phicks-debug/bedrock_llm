@@ -8,7 +8,7 @@ from termcolor import cprint
 
 from bedrock_llm import Agent, ModelConfig, ModelName, RetryConfig, StopReason
 from bedrock_llm.schema import InputSchema, MessageBlock, ToolMetadata
-from bedrock_llm.monitor import monitor_async
+from bedrock_llm.monitor import monitor_sync
 
 # Define the runtime for knowledge base
 runtime = boto3.client("bedrock-agent-runtime", region_name="us-east-1")
@@ -57,8 +57,8 @@ wikipedia_retrieve_tool = ToolMetadata(
 
 # Create a function for retrieve knowledge base from AWS
 @Agent.tool(knowledge_base_retrieve_tool)
-@monitor_async
-async def knowledge_base_retrieve(query: str):
+@monitor_sync
+def knowledge_base_retrieve(query: str):
     kwargs = {
         "knowledgeBaseId": "VSR83TL8CR",  # Insert your knowledge base ID
         "retrievalConfiguration": {
@@ -74,16 +74,16 @@ async def knowledge_base_retrieve(query: str):
 
 # Create a function for retrieve information on wikipedia
 @Agent.tool(wikipedia_retrieve_tool)
-@monitor_async
-async def wikipedia_retrieve(query: str) -> Dict[str, Any]:
-    async def get_page_info(title: str) -> Dict[str, Any]:
+@monitor_sync
+def wikipedia_retrieve(query: str) -> Dict[str, Any]:
+    def get_page_info(title: str) -> Dict[str, Any]:
         """
         Helper function to asynchronously get page information for a single title.
         """
         try:
             # Run synchronous Wikipedia operations in a separate thread
-            page = await asyncio.to_thread(wikipedia.page, title)
-            summary = await asyncio.to_thread(wikipedia.summary, title, sentences=2)
+            page = wikipedia.page(title)
+            summary = wikipedia.summary(title, sentences=2)
 
             return {
                 "summary": summary,
@@ -99,20 +99,14 @@ async def wikipedia_retrieve(query: str) -> Dict[str, Any]:
 
     try:
         # Search for pages matching the query
-        search_results = await asyncio.to_thread(wikipedia.search, query, results=5)
+        search_results = wikipedia.search(query, results=5)
 
         # Create tasks for all page info retrievals
-        tasks = [get_page_info(title) for title in search_results]
+        result = []
+        for title in search_results:
+            result.append(get_page_info(title))
 
-        # Wait for all tasks to complete
-        page_info_results = await asyncio.gather(*tasks)
-
-        # Combine results with titles, filtering out None results
-        combined_results = {}
-        for title, info in zip(search_results, page_info_results):
-            if info is not None:  # Only include results that aren't None
-                combined_results[title] = info
-        return str(combined_results)
+        return "/n/n".join(result)
     except Exception as e:
         return {"error": str(e)}
 
@@ -157,8 +151,8 @@ def iterate_through_location(location: dict):
     return None
 
 
-@monitor_async
-async def main():
+@monitor_sync
+def main():
     # Create system prompt
     system = """- You are an RAG Agent for Eximbank in accessing Eximbank website to craw data and informations related to customer services and bank products.
 - Your job is pass the user question to the retrieval tool to get the most relevant documents, and then answer the user's question using only those documents from the search results.
@@ -170,43 +164,32 @@ If the search results do not contain information that can answer the question, p
         role="user", content="How impact Eximbank is for the economic of Vietname?"
     )
 
-    # Initializate session
-    await agent.init_session()
-
-    # Invoke the model and get results
-    async for (
-        token,
-        stop_reason,
-        response,
-        tool_result,
-    ) in agent.generate_and_action_async(
+    # Invoke the model
+    result = agent.generate_and_action(
         config=config,
         prompt=prompt,
         system=system,
-        tools=["knowledge_base_retrieve", "wikipedia_retrieve"],
-    ):
-        # Print out the results
-        if token:
-            cprint(token, "green", end="", flush=True)
+        tools=[knowledge_base_retrieve, wikipedia_retrieve],
+    )
+
+    # Parse the result the model and get results
+    for response_block, tool_result in result:
 
         # Print out the tool result
         if tool_result:
             for x in tool_result:
-                cprint(f"\n{x.content}", "yellow", flush=True)
+                cprint(f"\n{x}", "yellow", flush=True)
 
-        # Print out the function that need to use
-        if stop_reason == StopReason.TOOL_USE:
-            for x in response.tool_calls:
-                cprint(f"\n{x.model_dump()}", "cyan", end="", flush=True)
-            cprint(f"\n{stop_reason}", "red", flush=True)
-        elif stop_reason:
-            cprint(f"\n{stop_reason}", "red", flush=True)
-
-    # Close the session
-    await agent.close()
+        if response_block:
+            cprint(response_block.message.content, "green")
+            # Print out the function that need to use
+            if response_block.stop_reason == StopReason.TOOL_USE:
+                for x in response_block.message.tool_calls:
+                    cprint(f"\n{x.model_dump()}", "cyan", end="", flush=True)
+                cprint(f"\n{response_block.stop_reason}", "red", flush=True)
+            elif response_block.stop_reason:
+                cprint(f"\n{response_block.stop_reason}", "red", flush=True)
 
 
 if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())
+    main()

@@ -1,3 +1,5 @@
+# flake8: noqa: E501
+
 import asyncio
 
 # Add for print console with color
@@ -33,11 +35,11 @@ async def chat_with_titan():
         prompt = MessageBlock(role="user", content=input_prompt)
 
         # Simple text generation
-        async for token, stop_reason, _ in client.generate_async(prompt=prompt):
-            if stop_reason is None:
+        async for token, res in client.generate_async(prompt=prompt):
+            if res is None:
                 cprint(token, color="green", end="", flush=True)
             else:
-                cprint(f"\nGeneration stopped: {stop_reason}\n", color="red")
+                cprint(f"\nGeneration stopped: {res.stop_reason}\n", color="red")
 
         # Check for bye bye
         if input_prompt.lower() == "/bye":
@@ -63,11 +65,11 @@ async def chat_with_claude():
         prompt = MessageBlock(role="user", content=input_prompt)
 
         # Simple text generation
-        async for token, stop_reason, _ in client.generate_async(prompt=prompt):
-            if stop_reason is None:
+        async for token, res in client.generate_async(prompt=prompt):
+            if res is None:
                 cprint(token, color="green", end="", flush=True)
             else:
-                cprint(f"\nGeneration stopped: {stop_reason}\n", color="red")
+                cprint(f"\nGeneration stopped: {res}\n", color="red")
 
         # Check for bye bye
         if input_prompt.lower() == "/bye":
@@ -93,11 +95,11 @@ async def chat_with_llama():
         prompt = MessageBlock(role="user", content=input)
 
         # Generate a response from the model
-        async for chunk, stop_reason, _ in client.generate_async(prompt=prompt):
-            if stop_reason is None:
+        async for chunk, res in client.generate_async(prompt=prompt):
+            if res is None:
                 cprint(chunk, color="green", end="", flush=True)
             else:
-                cprint(f"\nGeneration stopped: {stop_reason}\n", color="red")
+                cprint(f"\nGeneration stopped: {res.stop_reason}\n", color="red")
 
         if input.lower() == "/bye":
             break
@@ -109,7 +111,7 @@ async def chat_with_mistral():
     # Initialize the client
     client = AsyncClient(
         region_name="us-west-2",
-        model_name=ModelName.MISTRAL_7B,
+        model_name=ModelName.MISTRAL_LARGE_2,
         memory=[],
         retry_config=RetryConfig(max_retries=3, retry_delay=1.0),
     )
@@ -125,13 +127,11 @@ async def chat_with_mistral():
         )
 
         # Generate a response from the model
-        async for chunk, stop_reason, _ in client.generate_async(
-            prompt=prompt, system=system
-        ):
-            if stop_reason is None:
+        async for chunk, res in client.generate_async(prompt=prompt, system=system):
+            if res is None:
                 cprint(chunk, color="green", end="", flush=True)
             else:
-                cprint(f"\nGeneration stopped: {stop_reason}\n", color="red")
+                cprint(f"\nGeneration stopped: {res.stop_reason}\n", color="red")
 
         if prompt.content.lower() == "/bye":
             break
@@ -155,11 +155,11 @@ async def chat_with_jamba():
         prompt = MessageBlock(role="user", content=input)
 
         # Generate a response from the model
-        async for chunk, stop_reason, _ in client.generate_async(prompt=prompt):
-            if stop_reason is None:
+        async for chunk, res in client.generate_async(prompt=prompt):
+            if res is None:
                 cprint(chunk, color="green", end="", flush=True)
             else:
-                cprint(f"\nGeneration stopped: {stop_reason}\n", color="red")
+                cprint(f"\nGeneration stopped: {res.stop_reason}\n", color="red")
 
         # Check for bye bye
         if input.lower() == "/bye":
@@ -170,8 +170,7 @@ async def chat_with_jamba():
 
 if __name__ == "__main__":
     model_selection = input(
-        """Select (1 for Claude,
-2 for Titan, 3 for Llama, 4 for Mistral and 5 for Jamba): """
+        """Select (1 for Claude, 2 for Titan, 3 for Llama, 4 for Mistral and 5 for Jamba): """
     )
     if model_selection == "1":
         asyncio.run(chat_with_claude())

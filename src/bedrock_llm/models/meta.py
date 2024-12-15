@@ -12,9 +12,10 @@ from typing import (Any, AsyncGenerator, Dict, List, Optional, Sequence, Tuple,
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..models.base import (BaseModelImplementation, MessageBlock, ModelConfig,
-                           StopReason, SystemBlock)
+                           SystemBlock)
 from ..schema.response import ResponseBlock, TraceBlock
 from ..schema.tools import ToolMetadata
+from ..types.enums import StopReason
 
 
 class LlamaImplementation(BaseModelImplementation):
@@ -74,17 +75,17 @@ class LlamaImplementation(BaseModelImplementation):
         chunk = json.loads(response)
         response_text = chunk["generation"].strip()
 
-        if response_text[0] == "[" and response_text[-1] == "]":
+        if response_text.startswith("[") and response_text.endswith("]"):
             message = MessageBlock(role="tool", content=response_text)
             stop_reason = StopReason.TOOL_USE
-
-        message = MessageBlock(role="assistant", content=response_text)
-        if chunk["stop_reason"] == "stop":
-            stop_reason = StopReason.END_TURN
-        elif chunk["stop_reason"] == "length":
-            stop_reason = StopReason.MAX_TOKENS
         else:
-            stop_reason = StopReason.ERROR
+            message = MessageBlock(role="assistant", content=response_text)
+            if chunk["stop_reason"] == "stop":
+                stop_reason = StopReason.END_TURN
+            elif chunk["stop_reason"] == "length":
+                stop_reason = StopReason.MAX_TOKENS
+            else:
+                stop_reason = StopReason.ERROR
 
         trace = TraceBlock(
             input_tokens=chunk["prompt_token_count"],
@@ -161,49 +162,73 @@ class LlamaImplementation(BaseModelImplementation):
 
     async def parse_stream_response(
         self, stream: Any
-    ) -> AsyncGenerator[
-        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
-    ]:
+    ) -> AsyncGenerator[Tuple[Optional[str], Optional[ResponseBlock]], None]:
         full_answer: List[str] = []
+        is_stop = False
+        message = None
 
         async for chunk in stream:
-            yield chunk["generation"], None, None
-            full_answer.append(chunk["generation"])
+            if not is_stop:
+                full_answer.append(chunk["generation"])
+                yield chunk["generation"], None
 
-            if chunk.get("stop_reason"):
-                response = "".join(full_answer).strip()
+            if not is_stop:  # Make sure the yield did not execute dead logic
+                if chunk.get("stop_reason"):
+                    response = "".join(full_answer).strip()
 
-                # Handle empty response
-                if not response:
-                    message = MessageBlock(role="assistant", content="")
-                    yield None, StopReason.ERROR, message
-                    return
+                    # Handle empty response
+                    if not response:
+                        message = MessageBlock(role="assistant", content="")
+                        stop = StopReason.END_TURN
+                        is_stop = True
+                        continue
 
-                # Check if response is a tool call
-                if response.startswith("[") and response.endswith("]"):
-                    try:
-                        tool_calls = self._parse_tool_calls(response)
-                        if tool_calls:
-                            message = MessageBlock(
-                                role="assistant",
-                                content="<|python_tag|>" + response,
-                                tool_calls=tool_calls,
-                            )
-                            yield None, StopReason.TOOL_USE, message
-                        else:
+                    # Check if response is a tool call
+                    if response.startswith("[") and response.endswith("]"):
+                        try:
+                            tool_calls = self._parse_tool_calls(response)
+                            if tool_calls:
+                                message = MessageBlock(
+                                    role="assistant",
+                                    content="<|python_tag|>" + response,
+                                    tool_calls=tool_calls,
+                                )
+                                stop = StopReason.TOOL_USE
+                                is_stop = True
+                            else:
+                                message = MessageBlock(
+                                    role="assistant", content=response
+                                )
+                                stop = StopReason.ERROR
+                                is_stop = True
+                        except Exception as e:
+                            logging.error(f"Failed to parse tool calls: {e}")
                             message = MessageBlock(role="assistant", content=response)
-                            yield None, StopReason.ERROR, message
-                    except Exception as e:
-                        logging.error(f"Failed to parse tool calls: {e}")
+                            stop = StopReason.ERROR
+                            is_stop = True
+                    else:
                         message = MessageBlock(role="assistant", content=response)
-                        yield None, StopReason.ERROR, message
-                        return
+                        if chunk["stop_reason"] == "stop":
+                            stop = StopReason.END_TURN
+                        elif chunk["stop_reason"] == "length":
+                            stop = StopReason.MAX_TOKENS
+                        else:
+                            stop = StopReason.ERROR
 
-                message = MessageBlock(role="assistant", content=response)
-                if chunk["stop_reason"] == "stop":
-                    yield None, StopReason.END_TURN, message
-                elif chunk["stop_reason"] == "length":
-                    yield None, StopReason.MAX_TOKENS, message
-                else:
-                    yield None, StopReason.ERROR, message
+            if chunk.get("amazon-bedrock-invocationMetrics") and message:
+                metrics = chunk["amazon-bedrock-invocationMetrics"]
+                yield None, ResponseBlock(
+                    message=message,
+                    stop_reason=stop,
+                    trace=TraceBlock(
+                        input_tokens=metrics["inputTokenCount"],
+                        output_tokens=metrics["outputTokenCount"],
+                        total_tokens=metrics["inputTokenCount"]
+                        + metrics["outputTokenCount"],
+                        metadata={
+                            "invocation_latency": metrics["invocationLatency"],
+                            "first_byte_latency": metrics["firstByteLatency"],
+                        },
+                    ),
+                )
                 return

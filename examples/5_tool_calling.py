@@ -58,4 +58,4 @@ response = client.generate(
 
 # Print out the results
 cprint(response.message.content, "green")
-cprint(response.stop_reason, "red")
+cprint(response.stop_reason.name, "red")

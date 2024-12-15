@@ -51,3 +51,8 @@ class StopReason(Enum):
     STOP_SEQUENCE = 3
     TOOL_USE = 4
     ERROR = 5
+
+
+class ToolState(Enum):
+    CLAUDE = 1  # Claude way of tool calling
+    MISTRAL_JAMBA_LLAMA = 2  # Mistral AI, Jamba, Llama way of tool calling
