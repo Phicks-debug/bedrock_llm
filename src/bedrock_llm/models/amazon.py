@@ -243,3 +243,103 @@ class TitanEmbeddingsV2Implementation(TitanEmbedding):
             input_type,
             **kwargs
         )
+
+
+class NovaImplementation(BaseModelImplementation):
+    """Implementation for Amazon Nova models which use a different payload structure than Titan."""
+
+    def prepare_request(
+        self,
+        config: ModelConfig,
+        prompt: Union[str, List[Dict]],
+        system: Optional[Union[str, SystemBlock]] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        if tools:
+            raise ValueError(
+                """
+                Amazon Nova models do not support function calling and tools.
+                Please use another model.
+                """
+            )
+
+        if isinstance(system, SystemBlock):
+            system = system.text
+
+        # Nova uses a messages array format
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system.text if isinstance(system, SystemBlock) else system})
+
+        if isinstance(prompt, str):
+            messages.append({"role": "user", "content": prompt})
+        elif isinstance(prompt, MessageBlock):
+            messages.append({"role": prompt.role, "content": prompt.content})
+        else:
+            for msg in prompt:
+                if isinstance(msg, dict):
+                    messages.append(msg)
+                else:
+                    messages.append({"role": msg.role, "content": msg.content})
+
+        return {
+            "messages": messages,
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "stop_sequences": config.stop_sequences if config.stop_sequences else [],
+        }
+
+    async def prepare_request_async(
+        self,
+        config: ModelConfig,
+        prompt: Union[str, List[Dict]],
+        system: Optional[Union[str, SystemBlock]] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        return self.prepare_request(config, prompt, system, tools, **kwargs)
+
+    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
+        chunk = json.loads(response)
+        message = MessageBlock(
+            role="assistant",
+            content=chunk["content"][0]["text"],
+            name=None,
+            tool_calls=None,
+            tool_call_id=None,
+        )
+        if chunk["stop_reason"] == "end_turn":
+            return message, StopReason.END_TURN
+        elif chunk["stop_reason"] == "max_tokens":
+            return message, StopReason.MAX_TOKENS
+        elif chunk["stop_reason"] == "stop_sequence":
+            return message, StopReason.STOP_SEQUENCE
+        else:
+            return message, StopReason.ERROR
+
+    async def parse_stream_response(
+        self, stream: Any
+    ) -> AsyncGenerator[
+        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
+    ]:
+        full_response = []
+        async for event in stream:
+            chunk = json.loads(event["chunk"]["bytes"])
+            if "content" in chunk and chunk["content"]:
+                text = chunk["content"][0]["text"]
+                yield text, None, None
+                full_response.append(text)
+            if "stop_reason" in chunk and chunk["stop_reason"]:
+                message = MessageBlock(role="assistant", content="".join(full_response))
+                if chunk["stop_reason"] == "end_turn":
+                    yield None, StopReason.END_TURN, message
+                elif chunk["stop_reason"] == "max_tokens":
+                    yield None, StopReason.MAX_TOKENS, message
+                elif chunk["stop_reason"] == "stop_sequence":
+                    yield None, StopReason.STOP_SEQUENCE, message
+                else:
+                    yield None, StopReason.ERROR, message
+                return

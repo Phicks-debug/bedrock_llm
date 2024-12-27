@@ -4,7 +4,7 @@ from typing import Dict, Type, Union
 
 from ..types.enums import ModelName
 from .ai21 import JambaImplementation
-from .amazon import (TitanEmbeddingsV1Implementation,
+from .amazon import (NovaImplementation, TitanEmbeddingsV1Implementation,
                      TitanEmbeddingsV2Implementation, TitanImplementation)
 from .anthropic import ClaudeImplementation
 from .base import BaseModelImplementation
@@ -28,6 +28,9 @@ MODEL_IMPLEMENTATIONS: Dict[
     ModelName.TITAN_LITE: TitanImplementation,
     ModelName.TITAN_EXPRESS: TitanImplementation,
     ModelName.TITAN_PREMIER: TitanImplementation,
+    ModelName.NOVA_MICRO: NovaImplementation,
+    ModelName.NOVA_LITE: NovaImplementation,
+    ModelName.NOVA_PRO: NovaImplementation,
     ModelName.JAMBA_1_5_LARGE: JambaImplementation,
     ModelName.JAMBA_1_5_MINI: JambaImplementation,
     ModelName.MISTRAL_7B: MistralInstructImplementation,
