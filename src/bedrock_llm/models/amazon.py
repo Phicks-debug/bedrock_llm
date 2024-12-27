@@ -243,3 +243,108 @@ class TitanEmbeddingsV2Implementation(TitanEmbedding):
             input_type,
             **kwargs
         )
+
+
+class NovaImplementation(BaseModelImplementation):
+    """Implementation for Amazon's Nova model family (Micro, Lite, Pro)."""
+
+    def prepare_request(
+        self,
+        config: ModelConfig,
+        prompt: Union[str, List[Dict]],
+        system: Optional[Union[str, SystemBlock]] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        if tools:
+            raise ValueError("Nova models do not support function calling and tools.")
+
+        messages = []
+        
+        # Add system message if provided
+        if system:
+            if isinstance(system, SystemBlock):
+                system = system.text
+            messages.append({"role": "system", "content": system})
+        
+        # Handle prompt
+        if isinstance(prompt, str):
+            messages.append({"role": "user", "content": prompt})
+        elif isinstance(prompt, list):
+            messages.extend(prompt)
+        else:
+            raise ValueError("Prompt must be either a string or a list of message dictionaries")
+
+        request = {
+            "messages": messages,
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+        }
+        
+        if config.stop_sequences:
+            request["stop_sequences"] = config.stop_sequences
+            
+        return request
+
+    async def prepare_request_async(
+        self,
+        config: ModelConfig,
+        prompt: Union[str, List[Dict]],
+        system: Optional[Union[str, SystemBlock]] = None,
+        tools: Optional[Union[List[ToolMetadata], List[Dict]]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        return self.prepare_request(config, prompt, system, tools, **kwargs)
+
+    def parse_response(self, response: Any) -> Tuple[MessageBlock, StopReason]:
+        if isinstance(response, bytes):
+            response = json.loads(response)
+            
+        message = MessageBlock(
+            role="assistant",
+            content=response["completion"],
+            name=None,
+            tool_calls=None,
+            tool_call_id=None,
+        )
+        
+        stop_reason_map = {
+            "stop_sequence": StopReason.STOP_SEQUENCE,
+            "max_tokens": StopReason.MAX_TOKENS,
+            "error": StopReason.ERROR
+        }
+        
+        return message, stop_reason_map.get(response["stop_reason"], StopReason.END_TURN)
+
+    async def parse_stream_response(
+        self, stream: Any
+    ) -> AsyncGenerator[
+        Tuple[Optional[str], Optional[StopReason], Optional[MessageBlock]], None
+    ]:
+        full_response = []
+        async for event in stream:
+            chunk = json.loads(event["chunk"]["bytes"])
+            
+            if "delta" in chunk:
+                yield chunk["delta"], None, None
+                full_response.append(chunk["delta"])
+                
+            if chunk.get("stop_reason"):
+                message = MessageBlock(
+                    role="assistant",
+                    content="".join(full_response),
+                    name=None,
+                    tool_calls=None,
+                    tool_call_id=None,
+                )
+                
+                stop_reason_map = {
+                    "stop_sequence": StopReason.STOP_SEQUENCE,
+                    "max_tokens": StopReason.MAX_TOKENS,
+                    "error": StopReason.ERROR
+                }
+                
+                yield None, stop_reason_map.get(chunk["stop_reason"], StopReason.END_TURN), message
+                return
