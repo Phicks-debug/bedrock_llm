@@ -197,6 +197,7 @@ class BaseClient(ABC):
             accept="application/json",
             contentType="application/json",
             body=json.dumps(request_body),
+            performanceConfigLatency = "optimized"
         )
 
     async def close(self):
