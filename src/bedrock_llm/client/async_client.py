@@ -75,10 +75,10 @@ class AsyncClient(BaseClient):
         if self.session:
             await self.session.close()
 
-    async def _sign_request_async(self, url, method, body):
-        return await asyncio.to_thread(self._sign_request, url, method, body)
+    async def _sign_request_async(self, url, method, body, optimized):
+        return await asyncio.to_thread(self._sign_request, url, method, body, optimized)
 
-    def _sign_request(self, url, method, body):
+    def _sign_request(self, url, method, body, optimized):
         credentials = self.credentials
 
         request = AWSRequest(
@@ -91,6 +91,10 @@ class AsyncClient(BaseClient):
         request.headers.add_header(
             "Host", f"bedrock-runtime.{self.region_name}.amazonaws.com"
         )
+        if optimized:
+            request.headers.add_header(
+                "X-Amzn-Bedrock-PerformanceConfig-Latency", "optimized"
+            )
 
         SigV4Auth(credentials, self.service, self.region_name).add_auth(request)
 
@@ -123,7 +127,11 @@ class AsyncClient(BaseClient):
             )
             url = f"https://bedrock-runtime.{self.region_name}.amazonaws.com/model/{self.model_name}/invoke-with-response-stream"
 
-            headers = await self._sign_request_async(url, "POST", request_body)
+            optimized = kwargs.get("optimized", False)
+
+            headers = await self._sign_request_async(
+                url, "POST", request_body, optimized
+            )
 
             try:
                 if not self.session:

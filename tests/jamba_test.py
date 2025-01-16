@@ -4,15 +4,15 @@ import boto3
 
 client = boto3.client("bedrock-runtime", region_name="us-east-1")
 
-# message = {
-#     "role": "user",
-#     "content": "What is the weather like right now in Melbourne, Australia?",
-# }
-
 message = {
     "role": "user",
-    "content": "Thủ đô của Ý bây giờ là gì? Tại sao?",
+    "content": "What is the weather like right now in Melbourne, Australia?",
 }
+
+# message = {
+#     "role": "user",
+#     "content": "Thủ đô của Ý bây giờ là gì? Tại sao?",
+# }
 
 tools = [
     {
@@ -49,7 +49,7 @@ documents = {
 
 body = {
     "messages": [message],
-    # "tools": tools,
+    "tools": tools,
     # "documents": [documents],
     "max_tokens": 256,
     "temperature": 0.7,
@@ -68,7 +68,7 @@ respont = client.invoke_model(
 )
 
 # respont = client.invoke_model_with_response_stream(
-#     modelId="ai21.jamba-1-5-mini-v1:0",
+#     modelId="ai21.jamba-1-5-large-v1:0",
 #     contentType="application/json",
 #     accept="application/json",
 #     body=json.dumps(body),

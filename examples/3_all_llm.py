@@ -16,10 +16,14 @@ async def main():
 
     # Using Llama model
     for model in [
+        ModelName.LLAMA_3_1_8B,
+        ModelName.LLAMA_3_1_70B,
+        ModelName.LLAMA_3_1_405B,
         ModelName.LLAMA_3_2_1B,
         ModelName.LLAMA_3_2_3B,
         ModelName.LLAMA_3_2_11B,
         ModelName.LLAMA_3_2_90B,
+        ModelName.LLAMA_3_3_70B,
     ]:
         async with AsyncClient(
             region_name="us-west-2", model_name=model, retry_config=retry_config
@@ -32,24 +36,6 @@ async def main():
                     cprint(f"\nGeneration stopped: {res.stop_reason}", color="red")
                     break
                 cprint(token, color="yellow", end="", flush=True)
-
-    # Using Titan model
-    for model in [
-        ModelName.TITAN_LITE,
-        ModelName.TITAN_EXPRESS,
-        ModelName.TITAN_PREMIER,
-    ]:
-        async with AsyncClient(
-            region_name="us-east-1", model_name=model, retry_config=retry_config
-        ) as titan_client:
-            print("Model: ", model)
-            async for token, res in titan_client.generate_async(
-                config=config, prompt=prompt, system=system
-            ):
-                if res:
-                    cprint(f"\nGeneration stopped: {res.stop_reason}", color="red")
-                    break
-                cprint(token, color="cyan", end="", flush=True)
 
     for model in [
         ModelName.NOVA_MICRO,

@@ -1,7 +1,7 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.2
 Name: bedrock_llm
-Version: 0.2.0
-Summary: A Python LLM frameworkfor interacting with AWS Bedrock services, built on top of boto3. This library serves as a comprehensive tool for fast prototyping, building POCs, and deploying production-ready LLM applications with robust infrastructure support.
+Version: 1.0.0
+Summary: A Python LLM framework for interacting with AWS Bedrock services, it supports true async to interact with AWS bedrock Service for invoke model API, build on top of aiohttp. It also have synchronous version which built on top of boto3. This library serves as a comprehensive tool for fast prototyping, building POCs, and deploying production-ready LLM applications with robust infrastructure support.
 Home-page: https://github.com/Phicks-debug/bedrock_llm
 Author: Tran Quy An
 Author-email: an.tq@techxcorp.com
@@ -25,6 +25,16 @@ Requires-Dist: termcolor>=2.3.0
 Requires-Dist: types-pytz
 Requires-Dist: rx==3.2.0
 Requires-Dist: orjson
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
 
 # Bedrock LLM
 

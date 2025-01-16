@@ -1,5 +1,6 @@
+# flake8: noqa: E203n do not remove this line.
 """
-Module for manage Streaming Parser
+Module for managing Streaming Parser
 """
 
 import asyncio

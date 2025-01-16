@@ -10,6 +10,8 @@ async def main():
             "Viết câu truyện về một con chó tên Sigma."
         ):
             print(res[0], end="", flush=True)
+            if res[1]:
+                print(res[1])
 
 
 asyncio.run(main())

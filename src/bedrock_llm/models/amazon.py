@@ -431,6 +431,7 @@ class NovaImplementation(BaseModelImplementation):
         tool_uses = []
 
         async for chunk in stream:
+            print(chunk)
             # Handle message start
             if "messageStart" in chunk:
                 continue
